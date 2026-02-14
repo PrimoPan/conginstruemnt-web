@@ -1,38 +1,179 @@
+:root {
+  --bg: #fafafa;
+  --panel: #ffffff;
+  --border: rgba(0, 0, 0, 0.08);
+  --border2: rgba(0, 0, 0, 0.12);
+  --text: rgba(0, 0, 0, 0.88);
+  --muted: rgba(0, 0, 0, 0.55);
+  --shadow: 0 1px 14px rgba(0, 0, 0, 0.05);
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "PingFang SC",
+  "Hiragino Sans GB", "Microsoft Yahei", Arial, sans-serif;
+}
+
 .App {
-  text-align: center;
-}
-
-.App-logo {
-  height: 40vmin;
-  pointer-events: none;
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  .App-logo {
-    animation: App-logo-spin infinite 20s linear;
-  }
-}
-
-.App-header {
-  background-color: #282c34;
-  min-height: 100vh;
+  height: 100%;
   display: flex;
   flex-direction: column;
+}
+
+.TopBar {
+  height: 56px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  display: flex;
   align-items: center;
-  justify-content: center;
-  font-size: calc(10px + 2vmin);
+  justify-content: space-between;
+  padding: 0 16px;
+}
+
+.TopBar__left {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.Brand {
+  font-weight: 700;
+  letter-spacing: 0.2px;
+}
+
+.Sub {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.TopBar__right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.Meta {
+  color: var(--muted);
+  font-size: 12px;
+  padding-left: 6px;
+}
+
+.Dot {
+  margin: 0 6px;
+}
+
+.Main {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 1.2fr;
+  gap: 12px;
+  padding: 12px;
+}
+
+.Left, .Right {
+  min-height: 0;
+}
+
+.Panel {
+  height: 100%;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.PanelHeader {
+  height: 44px;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.Input {
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid var(--border2);
+  padding: 0 10px;
+  outline: none;
+}
+
+.Input--grow {
+  flex: 1;
+  height: 40px;
+  border-radius: 12px;
+}
+
+.Btn {
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid var(--border2);
+  background: white;
+  padding: 0 12px;
+  cursor: pointer;
+}
+
+.Btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.ChatBody {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ChatComposer {
+  display: flex;
+  gap: 8px;
+  padding: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.Bubble {
+  max-width: 82%;
+  padding: 10px 12px;
+  border-radius: 14px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+}
+
+.Bubble--user {
+  align-self: flex-end;
+  background: #111827;
   color: white;
 }
 
-.App-link {
-  color: #61dafb;
+.Bubble--assistant {
+  align-self: flex-start;
+  background: #f3f4f6;
+  color: #111827;
 }
-
-@keyframes App-logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+.BubbleText {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.Cursor {
+  margin-left: 2px;
+  opacity: 0.8;
+  animation: blink 1s step-end infinite;
+}
+@keyframes blink {
+  50% { opacity: 0; }
 }
