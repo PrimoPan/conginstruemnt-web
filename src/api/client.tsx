@@ -1,3 +1,4 @@
+// src/api/client.ts
 import type {
     LoginResponse,
     ConversationCreateResponse,
@@ -9,14 +10,17 @@ import type {
 const BASE =
     process.env.REACT_APP_API_BASE_URL?.replace(/\/$/, "") || "http://43.138.212.17:3001";
 
+/** --------- 普通 JSON 请求 --------- */
 async function http<T>(path: string, opts: RequestInit = {}, token?: string): Promise<T> {
     const headers: Record<string, string> = {
         "Content-Type": "application/json",
         ...(opts.headers as any),
     };
+
     if (token) headers.Authorization = `Bearer ${token}`;
 
     const res = await fetch(`${BASE}${path}`, { ...opts, headers });
+
     if (!res.ok) {
         const text = await res.text().catch(() => "");
         throw new Error(text || `HTTP ${res.status}`);
@@ -24,7 +28,8 @@ async function http<T>(path: string, opts: RequestInit = {}, token?: string): Pr
     return (await res.json()) as T;
 }
 
-type TurnStreamHandlers = {
+/** --------- SSE（POST）流式 turn --------- */
+export type TurnStreamHandlers = {
     signal?: AbortSignal;
     onStart?: (d: any) => void;
     onToken?: (t: string) => void;
@@ -33,21 +38,40 @@ type TurnStreamHandlers = {
     onError?: (err: any) => void;
 };
 
+function parseMaybeJson(raw: string): any {
+    const s = raw.trim();
+    if (!s) return s;
+    try {
+        return JSON.parse(s);
+    } catch {
+        return s;
+    }
+}
+
 function takeSseBlocks(buf: string): { blocks: string[]; rest: string } {
     // 兼容 \n\n 和 \r\n\r\n
     const blocks: string[] = [];
     while (true) {
         const idx = buf.search(/\r?\n\r?\n/);
         if (idx < 0) break;
+
         const block = buf.slice(0, idx);
         buf = buf.slice(idx).replace(/^\r?\n\r?\n/, "");
+
         if (block.trim()) blocks.push(block);
     }
     return { blocks, rest: buf };
 }
 
 function parseSseBlock(block: string): { event: string; data: string } | null {
-    const lines = block.split(/\r?\n/);
+    // 忽略 retry / 注释行（:ok）
+    const lines = block
+        .split(/\r?\n/)
+        .map((l) => l.trimEnd())
+        .filter((l) => l.length > 0 && !l.startsWith("retry:") && !l.startsWith(":"));
+
+    if (!lines.length) return null;
+
     let event = "message";
     const dataLines: string[] = [];
 
@@ -61,16 +85,78 @@ function parseSseBlock(block: string): { event: string; data: string } | null {
     return { event, data };
 }
 
-function parseMaybeJson(raw: string): any {
-    const s = raw.trim();
-    if (!s) return s;
-    try {
-        return JSON.parse(s);
-    } catch {
-        return s;
+async function postTurnStream(params: {
+    token: string;
+    cid: string;
+    userText: string;
+    handlers: TurnStreamHandlers;
+}) {
+    const { token, cid, userText, handlers } = params;
+
+    const res = await fetch(`${BASE}/api/conversations/${cid}/turn/stream`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            Accept: "text/event-stream",
+            Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ userText }),
+        signal: handlers.signal,
+    });
+
+    if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(text || `HTTP ${res.status}`);
+    }
+    if (!res.body) throw new Error("No response body (SSE stream not available)");
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder("utf-8");
+
+    let buf = "";
+    let gotDone = false;
+
+    while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        buf += decoder.decode(value, { stream: true });
+        const { blocks, rest } = takeSseBlocks(buf);
+        buf = rest;
+
+        for (const b of blocks) {
+            const msg = parseSseBlock(b);
+            if (!msg) continue;
+
+            const payload = parseMaybeJson(msg.data);
+
+            if (msg.event === "start") handlers.onStart?.(payload);
+            else if (msg.event === "ping") handlers.onPing?.(payload);
+            else if (msg.event === "token") {
+                // 后端是 data: {"token":"..."}；也兼容直接 string
+                const tk =
+                    typeof payload === "string"
+                        ? payload
+                        : typeof payload?.token === "string"
+                            ? payload.token
+                            : "";
+                if (tk) handlers.onToken?.(tk);
+            } else if (msg.event === "done") {
+                gotDone = true;
+                handlers.onDone?.(payload as TurnResponse);
+            } else if (msg.event === "error") {
+                handlers.onError?.(payload);
+            }
+        }
+    }
+
+    if (!gotDone) {
+        // 流结束但没有 done：通常是网络中断/后端异常
+        throw new Error("SSE stream ended without done event");
     }
 }
 
+/** --------- API 导出 --------- */
 export const api = {
     health: () => http<{ ok: boolean }>("/healthz"),
 
@@ -97,6 +183,7 @@ export const api = {
     getTurns: (token: string, cid: string, limit = 80) =>
         http<TurnItem[]>(`/api/conversations/${cid}/turns?limit=${limit}`, {}, token),
 
+    // 非流式（保留）
     turn: (token: string, cid: string, userText: string) =>
         http<TurnResponse>(
             `/api/conversations/${cid}/turn`,
@@ -104,60 +191,7 @@ export const api = {
             token
         ),
 
-    // ✅ POST + SSE（手动解析）
-    turnStream: async (token: string, cid: string, userText: string, h: TurnStreamHandlers) => {
-        const res = await fetch(`${BASE}/api/conversations/${cid}/turn/stream`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                Accept: "text/event-stream",
-                Authorization: `Bearer ${token}`,
-            },
-            body: JSON.stringify({ userText }),
-            signal: h.signal,
-        });
-
-        if (!res.ok) {
-            const text = await res.text().catch(() => "");
-            throw new Error(text || `HTTP ${res.status}`);
-        }
-        if (!res.body) throw new Error("No response body");
-
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder("utf-8");
-
-        let buf = "";
-        while (true) {
-            const { value, done } = await reader.read();
-            if (done) break;
-
-            buf += decoder.decode(value, { stream: true });
-            const { blocks, rest } = takeSseBlocks(buf);
-            buf = rest;
-
-            for (const b of blocks) {
-                const msg = parseSseBlock(b);
-                if (!msg) continue;
-
-                const payload = parseMaybeJson(msg.data);
-
-                if (msg.event === "start") h.onStart?.(payload);
-                else if (msg.event === "ping") h.onPing?.(payload);
-                else if (msg.event === "token") {
-                    // ✅ 兼容 data 是 string 或 {token:string}
-                    const tk =
-                        typeof payload === "string"
-                            ? payload
-                            : typeof payload?.token === "string"
-                                ? payload.token
-                                : "";
-                    if (tk) h.onToken?.(tk);
-                } else if (msg.event === "done") {
-                    h.onDone?.(payload as TurnResponse);
-                } else if (msg.event === "error") {
-                    h.onError?.(payload);
-                }
-            }
-        }
-    },
+    // ✅ 流式（SSE）
+    turnStream: (token: string, cid: string, userText: string, handlers: TurnStreamHandlers) =>
+        postTurnStream({ token, cid, userText, handlers }),
 };
