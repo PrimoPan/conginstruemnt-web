@@ -1,9 +1,16 @@
+import type {
+    TurnResponse,
+    TurnStreamErrorData,
+    TurnStreamPingData,
+    TurnStreamStartData,
+} from "../core/type";
+
 export type SseEvent =
-    | { event: "start"; data: any }
+    | { event: "start"; data: TurnStreamStartData }
     | { event: "token"; data: { token: string } }
-    | { event: "done"; data: any }
-    | { event: "ping"; data: any }
-    | { event: "error"; data: any }
+    | { event: "done"; data: TurnResponse }
+    | { event: "ping"; data: TurnStreamPingData }
+    | { event: "error"; data: TurnStreamErrorData }
     | { event: string; data: any };
 
 function parseSseBlocks(buffer: string) {
@@ -50,10 +57,10 @@ export async function postTurnStream(params: {
     token: string;              // sessionToken
     conversationId: string;
     userText: string;
-    onStart?: (data: any) => void;
+    onStart?: (data: TurnStreamStartData) => void;
     onToken?: (token: string) => void;
-    onDone?: (data: any) => void;
-    onError?: (err: any) => void;
+    onDone?: (data: TurnResponse) => void;
+    onError?: (err: TurnStreamErrorData) => void;
     signal?: AbortSignal;
 }) {
     const url = `${params.baseUrl}/api/conversations/${params.conversationId}/turn/stream`;
@@ -96,8 +103,16 @@ export async function postTurnStream(params: {
             else if (msg.event === "token") {
                 const t = typeof msg.data === "string" ? msg.data : msg.data?.token;
                 if (typeof t === "string" && t.length) params.onToken?.(t);
-            } else if (msg.event === "done") params.onDone?.(msg.data);
-            else if (msg.event === "error") params.onError?.(msg.data);
+            } else if (msg.event === "done") {
+                params.onDone?.(msg.data as TurnResponse);
+            } else if (msg.event === "error") {
+                const payload = msg.data;
+                const errPayload: TurnStreamErrorData =
+                    payload && typeof payload === "object" && typeof payload.message === "string"
+                        ? (payload as TurnStreamErrorData)
+                        : { message: typeof payload === "string" ? payload : "stream failed" };
+                params.onError?.(errPayload);
+            }
             // ping 直接忽略即可
         }
     }

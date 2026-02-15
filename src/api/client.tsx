@@ -1,10 +1,14 @@
 // src/api/client.ts
 import type {
     LoginResponse,
+    ConversationSummary,
+    ConversationDetail,
     ConversationCreateResponse,
     TurnResponse,
-    CDG,
     TurnItem,
+    TurnStreamStartData,
+    TurnStreamPingData,
+    TurnStreamErrorData,
 } from "../core/type";
 
 const BASE =
@@ -31,11 +35,11 @@ async function http<T>(path: string, opts: RequestInit = {}, token?: string): Pr
 /** --------- SSE（POST）流式 turn --------- */
 export type TurnStreamHandlers = {
     signal?: AbortSignal;
-    onStart?: (d: any) => void;
+    onStart?: (d: TurnStreamStartData) => void;
     onToken?: (t: string) => void;
-    onPing?: (d: any) => void;
+    onPing?: (d: TurnStreamPingData) => void;
     onDone?: (out: TurnResponse) => void;
-    onError?: (err: any) => void;
+    onError?: (err: TurnStreamErrorData) => void;
 };
 
 function parseMaybeJson(raw: string): any {
@@ -85,6 +89,26 @@ function parseSseBlock(block: string): { event: string; data: string } | null {
     return { event, data };
 }
 
+function toStartData(payload: any): TurnStreamStartData {
+    return {
+        conversationId:
+            payload && typeof payload.conversationId === "string" ? payload.conversationId : "",
+        graphVersion:
+            payload && Number.isFinite(Number(payload.graphVersion))
+                ? Number(payload.graphVersion)
+                : 0,
+    };
+}
+
+function toPingData(payload: any): TurnStreamPingData {
+    return {
+        t:
+            payload && Number.isFinite(Number(payload.t))
+                ? Number(payload.t)
+                : Date.now(),
+    };
+}
+
 async function postTurnStream(params: {
     token: string;
     cid: string;
@@ -130,8 +154,8 @@ async function postTurnStream(params: {
 
             const payload = parseMaybeJson(msg.data);
 
-            if (msg.event === "start") handlers.onStart?.(payload);
-            else if (msg.event === "ping") handlers.onPing?.(payload);
+            if (msg.event === "start") handlers.onStart?.(toStartData(payload));
+            else if (msg.event === "ping") handlers.onPing?.(toPingData(payload));
             else if (msg.event === "token") {
                 // 后端是 data: {"token":"..."}；也兼容直接 string
                 const tk =
@@ -145,7 +169,11 @@ async function postTurnStream(params: {
                 gotDone = true;
                 handlers.onDone?.(payload as TurnResponse);
             } else if (msg.event === "error") {
-                handlers.onError?.(payload);
+                const errPayload: TurnStreamErrorData =
+                    payload && typeof payload === "object" && typeof payload.message === "string"
+                        ? (payload as TurnStreamErrorData)
+                        : { message: typeof payload === "string" ? payload : "stream failed" };
+                handlers.onError?.(errPayload);
             }
         }
     }
@@ -166,6 +194,9 @@ export const api = {
             body: JSON.stringify({ username }),
         }),
 
+    listConversations: (token: string) =>
+        http<ConversationSummary[]>("/api/conversations", {}, token),
+
     createConversation: (token: string, title: string) =>
         http<ConversationCreateResponse>(
             "/api/conversations",
@@ -174,11 +205,7 @@ export const api = {
         ),
 
     getConversation: (token: string, cid: string) =>
-        http<{ conversationId: string; title: string; systemPrompt: string; graph: CDG }>(
-            `/api/conversations/${cid}`,
-            {},
-            token
-        ),
+        http<ConversationDetail>(`/api/conversations/${cid}`, {}, token),
 
     getTurns: (token: string, cid: string, limit = 80) =>
         http<TurnItem[]>(`/api/conversations/${cid}/turns?limit=${limit}`, {}, token),

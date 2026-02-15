@@ -1,19 +1,40 @@
+export type ConceptType =
+    | "goal"
+    | "constraint"
+    | "preference"
+    | "belief"
+    | "fact"
+    | "question";
+
+export type Strength = "hard" | "soft";
+export type Status = "proposed" | "confirmed" | "rejected" | "disputed";
+export type Severity = "low" | "medium" | "high" | "critical";
+export type EdgeType = "enable" | "constraint" | "determine" | "conflicts_with";
+
 export type CDGNode = {
     id: string;
-    type: "goal" | "constraint" | "preference" | "belief" | "fact" | "question" | string;
+    type: ConceptType;
+    strength?: Strength;
     statement: string;
-    status?: string;
-    confidence?: number;
-    strength?: "hard" | "soft";
+    status: Status;
+    confidence: number;
     locked?: boolean;
+    severity?: Severity;
+    importance?: number;
+    tags?: string[];
+    key?: string;
+    value?: unknown;
+    evidenceIds?: string[];
+    sourceMsgIds?: string[];
 };
 
 export type CDGEdge = {
     id: string;
     from: string;
     to: string;
-    type: "enable" | "constraint" | "determine" | "conflicts_with" | string;
-    confidence?: number;
+    type: EdgeType;
+    confidence: number;
+    phi?: string;
 };
 
 export type CDG = {
@@ -23,22 +44,42 @@ export type CDG = {
     edges: CDGEdge[];
 };
 
+export type PatchOp =
+    | { op: "add_node"; node: CDGNode }
+    | { op: "update_node"; id: string; patch: Partial<CDGNode> }
+    | { op: "remove_node"; id: string }
+    | { op: "add_edge"; edge: CDGEdge }
+    | { op: "remove_edge"; id: string };
+
+export type GraphPatch = {
+    ops: PatchOp[];
+    notes?: string[];
+};
+
 export type LoginResponse = {
     userId: string;
     username: string;
     sessionToken: string;
 };
 
-export type ConversationCreateResponse = {
+export type ConversationSummary = {
+    conversationId: string;
+    title: string;
+    updatedAt: string;
+};
+
+export type ConversationDetail = {
     conversationId: string;
     title: string;
     systemPrompt: string;
     graph: CDG;
 };
 
+export type ConversationCreateResponse = ConversationDetail;
+
 export type TurnResponse = {
     assistantText: string;
-    graphPatch: any;
+    graphPatch: GraphPatch;
     graph: CDG;
 };
 
@@ -48,4 +89,35 @@ export type TurnItem = {
     userText: string;
     assistantText: string;
     graphVersion: number;
+};
+
+export type TurnStreamStartData = {
+    conversationId: string;
+    graphVersion: number;
+};
+
+export type TurnStreamPingData = {
+    t: number;
+};
+
+export type TurnStreamErrorData = {
+    message: string;
+};
+
+export type FlowNodeData = {
+    shortLabel: string;
+    fullLabel: string;
+    meta: string;
+    nodeType: ConceptType;
+    severity?: Severity;
+    importance?: number;
+    tags?: string[];
+    evidenceIds?: string[];
+    sourceMsgIds?: string[];
+};
+
+export type NodeEvidenceFocus = {
+    nodeId: string;
+    evidenceTerms: string[];
+    sourceMsgIds?: string[];
 };

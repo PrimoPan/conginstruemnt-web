@@ -169,6 +169,12 @@ body {
   white-space: pre-wrap;
   word-break: break-word;
 }
+.EvidenceMark {
+  background: #fde68a;
+  color: inherit;
+  border-radius: 4px;
+  padding: 0 1px;
+}
 .Cursor {
   margin-left: 2px;
   opacity: 0.8;
@@ -176,4 +182,115 @@ body {
 }
 @keyframes blink {
   50% { opacity: 0; }
+}
+
+.CdgNode {
+  width: 280px;
+  border-radius: 14px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  background: #ffffff;
+  box-shadow: 0 1px 10px rgba(0, 0, 0, 0.06);
+  padding: 10px 12px 8px;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.CdgNode.is-selected {
+  box-shadow: 0 0 0 2px rgba(30, 64, 175, 0.18), 0 4px 16px rgba(0, 0, 0, 0.08);
+}
+
+.CdgNode--medium {
+  border-color: rgba(217, 119, 6, 0.62);
+  background: #fff8e8;
+}
+
+.CdgNode--low {
+  border-color: rgba(30, 64, 175, 0.35);
+  background: #eff6ff;
+}
+
+.CdgNode--high {
+  border-color: rgba(220, 38, 38, 0.6);
+  background: #fef2f2;
+}
+
+.CdgNode--critical {
+  border-color: rgba(153, 27, 27, 0.8);
+  background: #fee2e2;
+  box-shadow: 0 0 0 1px rgba(153, 27, 27, 0.18), 0 2px 12px rgba(127, 29, 29, 0.12);
+}
+
+.CdgNode__title {
+  color: #0f172a;
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.CdgNode__titleWrap {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.CdgNode__badge {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  border: 1px solid rgba(15, 23, 42, 0.16);
+  padding: 1px 7px;
+  font-size: 10px;
+  color: rgba(15, 23, 42, 0.72);
+  background: rgba(255, 255, 255, 0.9);
+  line-height: 1.4;
+}
+
+.CdgNode__meta {
+  color: rgba(15, 23, 42, 0.58);
+  font-size: 12px;
+  margin-top: 6px;
+}
+
+.CdgNode__details {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed rgba(15, 23, 42, 0.16);
+  color: rgba(15, 23, 42, 0.8);
+  display: grid;
+  gap: 4px;
+}
+
+.CdgNode__toggle {
+  margin-top: 8px;
+  margin-right: 6px;
+  border: 1px solid rgba(15, 23, 42, 0.18);
+  background: #ffffff;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1;
+  padding: 6px 8px;
+  cursor: pointer;
+}
+
+.CdgNode__editor {
+  width: 100%;
+  min-height: 74px;
+  resize: vertical;
+  border-radius: 8px;
+  border: 1px solid rgba(15, 23, 42, 0.18);
+  padding: 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.CdgNode__handle {
+  width: 8px !important;
+  height: 8px !important;
+  border: none !important;
+  background: #111827 !important;
+}
+
+.CdgNode--type-preference:not(.CdgNode--medium):not(.CdgNode--high):not(.CdgNode--critical) {
+  border-color: rgba(217, 119, 6, 0.42);
+  background: #fffaf0;
 }

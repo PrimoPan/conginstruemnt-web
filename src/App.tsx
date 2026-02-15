@@ -3,7 +3,7 @@ import React, { useEffect, useRef, useState } from "react";
 import "./App.css";
 
 import { api } from "./api/client";
-import type { CDG } from "./core/type";
+import type { CDG, NodeEvidenceFocus, TurnResponse, TurnStreamErrorData } from "./core/type";
 import { TopBar } from "./components/TopBar";
 import { ChatPanel, Msg } from "./components/ChatPanel";
 import { FlowPanel } from "./components/FlowPanel";
@@ -24,6 +24,7 @@ export default function App() {
 
   const [messages, setMessages] = useState<Msg[]>([]);
   const [graph, setGraph] = useState<CDG>(emptyGraph);
+  const [hoverFocus, setHoverFocus] = useState<NodeEvidenceFocus | null>(null);
 
   const [busy, setBusy] = useState(false);
   const loggedIn = !!token;
@@ -48,7 +49,7 @@ export default function App() {
         const turns = await api.getTurns(token, cid, 120);
         const ms: Msg[] = [];
 
-        for (const t of turns as any[]) {
+        for (const t of turns) {
           const tid = t.id || makeId("turn");
           ms.push({ id: `${tid}_u`, role: "user", text: t.userText });
           ms.push({ id: `${tid}_a`, role: "assistant", text: t.assistantText });
@@ -79,13 +80,19 @@ export default function App() {
   async function onNewConversation() {
     if (!token) return;
 
+    // 强制新会话：中断旧流并清空当前上下文
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setMessages([]);
+    setGraph(emptyGraph);
+    setHoverFocus(null);
+
     setBusy(true);
     try {
       const r = await api.createConversation(token, "新对话");
       setCid(r.conversationId);
       localStorage.setItem("ci_cid", r.conversationId);
       setGraph(r.graph);
-      setMessages([]);
     } finally {
       setBusy(false);
     }
@@ -96,6 +103,7 @@ export default function App() {
 
     const userText = text.trim();
     if (!userText) return;
+    setHoverFocus(null);
 
     // 中断上一次
     abortRef.current?.abort();
@@ -130,7 +138,7 @@ export default function App() {
           );
         },
 
-        onDone: (out: any) => {
+        onDone: (out: TurnResponse) => {
           // 最终覆盖一次，避免丢 token/换行
           setMessages((prev) =>
               prev.map((msg) =>
@@ -141,12 +149,12 @@ export default function App() {
           if (out?.graph) setGraph(out.graph);
         },
 
-        onError: (err: any) => {
+        onError: (err: TurnStreamErrorData) => {
           if (ac.signal.aborted) return;
           setMessages((prev) =>
               prev.map((msg) =>
                   msg.id === assistantId
-                      ? { ...msg, text: `流式失败：${err?.message || JSON.stringify(err)}` }
+                      ? { ...msg, text: `流式失败：${err.message}` }
                       : msg
               )
           );
@@ -186,11 +194,17 @@ export default function App() {
 
         <div className="Main">
           <div className="Left">
-            <ChatPanel messages={messages} disabled={disabled} busy={busy} onSend={onSend} />
+            <ChatPanel
+                messages={messages}
+                disabled={disabled}
+                busy={busy}
+                onSend={onSend}
+                evidenceFocus={hoverFocus}
+            />
           </div>
 
           <div className="Right">
-            <FlowPanel graph={graph} />
+            <FlowPanel graph={graph} onNodeEvidenceHover={setHoverFocus} />
           </div>
         </div>
       </div>

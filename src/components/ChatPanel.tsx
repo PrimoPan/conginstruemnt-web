@@ -1,5 +1,6 @@
 // src/components/ChatPanel.tsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import type { NodeEvidenceFocus } from "../core/type";
 
 export type Msg = {
     id: string;
@@ -12,6 +13,7 @@ export function ChatPanel(props: {
     disabled: boolean;
     busy: boolean;
     onSend: (text: string) => void;
+    evidenceFocus?: NodeEvidenceFocus | null;
 }) {
     const [input, setInput] = useState("");
     const bodyRef = useRef<HTMLDivElement | null>(null);
@@ -35,6 +37,83 @@ export function ChatPanel(props: {
         setInput("");
     };
 
+    function escapeRegExp(s: string) {
+        return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    }
+
+    function mergeRanges(ranges: Array<{ start: number; end: number }>) {
+        if (!ranges.length) return ranges;
+        const sorted = ranges.slice().sort((a, b) => a.start - b.start);
+        const out = [sorted[0]];
+        for (let i = 1; i < sorted.length; i += 1) {
+            const cur = sorted[i];
+            const last = out[out.length - 1];
+            if (cur.start <= last.end) {
+                last.end = Math.max(last.end, cur.end);
+            } else {
+                out.push({ ...cur });
+            }
+        }
+        return out;
+    }
+
+    function getHighlightRanges(text: string, terms: string[]) {
+        const ranges: Array<{ start: number; end: number }> = [];
+        const uniqueTerms = Array.from(
+            new Set(
+                terms
+                    .map((t) => String(t || "").trim())
+                    .filter((t) => t.length >= 2)
+            )
+        );
+
+        for (const t of uniqueTerms) {
+            const re = new RegExp(escapeRegExp(t), "g");
+            let m: RegExpExecArray | null;
+            while ((m = re.exec(text))) {
+                const start = m.index;
+                const end = start + m[0].length;
+                ranges.push({ start, end });
+            }
+        }
+        return mergeRanges(ranges);
+    }
+
+    function shouldApplyToMessage(msg: Msg) {
+        const src = props.evidenceFocus?.sourceMsgIds;
+        if (!src || !src.length) return true;
+        if (src.includes("latest_user")) return msg.role === "user";
+        return src.some((id) => msg.id === id || msg.id.startsWith(id));
+    }
+
+    function renderMessageText(msg: Msg) {
+        const focus = props.evidenceFocus;
+        if (!focus || !focus.evidenceTerms.length || !shouldApplyToMessage(msg)) {
+            return msg.text;
+        }
+
+        const ranges = getHighlightRanges(msg.text, focus.evidenceTerms);
+        if (!ranges.length) return msg.text;
+
+        const parts: React.ReactNode[] = [];
+        let cursor = 0;
+        for (const r of ranges) {
+            if (r.start > cursor) {
+                parts.push(msg.text.slice(cursor, r.start));
+            }
+            parts.push(
+                <mark key={`${msg.id}_${r.start}_${r.end}`} className="EvidenceMark">
+                    {msg.text.slice(r.start, r.end)}
+                </mark>
+            );
+            cursor = r.end;
+        }
+        if (cursor < msg.text.length) {
+            parts.push(msg.text.slice(cursor));
+        }
+        return parts;
+    }
+
     return (
         <div className="Panel">
             <div className="PanelHeader">对话</div>
@@ -46,7 +125,7 @@ export function ChatPanel(props: {
                         className={m.role === "user" ? "Bubble Bubble--user" : "Bubble Bubble--assistant"}
                         style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}
                     >
-                        {m.text}
+                        {renderMessageText(m)}
                     </div>
                 ))}
 
