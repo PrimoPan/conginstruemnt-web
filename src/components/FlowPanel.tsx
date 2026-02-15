@@ -26,7 +26,7 @@ export function FlowPanel(props: {
         <div className="Panel">
             <div className="PanelHeader">意图流程图（自动更新）</div>
 
-            <div style={{ height: "calc(100% - 44px)" }}>
+            <div className="FlowCanvas">
                 <ReactFlow
                     key={`${graph.id || "graph"}:${graph.version ?? 0}`}
                     nodes={nodes}
