@@ -74,6 +74,8 @@ REACT_APP_API_BASE_URL=http://localhost:3001
 - 发送消息时走 SSE 接口，`token` 事件逐步刷新 assistant 文本。
 - `done` 到达后更新整张图。
 - 鼠标 hover 流程图节点时，左侧聊天会高亮证据词（`evidenceIds`）。
+- 右上角“保存图修改”会把前端调整后的图（当前先保存节点重要度）写回后端，后续对话建图基于保存结果继续。
+- 节点内滑块/编辑区域默认带 `nodrag + nopan`，并且画布平移改为中键/右键，避免调重要度时误触节点拖拽。
 
 ---
 
@@ -85,6 +87,7 @@ REACT_APP_API_BASE_URL=http://localhost:3001
 - `GET /api/conversations`
 - `POST /api/conversations`
 - `GET /api/conversations/:id`
+- `PUT /api/conversations/:id/graph`（保存前端修改后的图）
 - `GET /api/conversations/:id/turns`
 - `POST /api/conversations/:id/turn`
 - `POST /api/conversations/:id/turn/stream`（SSE）
@@ -106,8 +109,8 @@ SSE 事件：
 3. `core/type.ts`：与后端 CDG/patch/turn 的核心类型契约。
 4. `core/graphToFlow.tsx`：把后端 CDG 映射成 React Flow 节点与边（分层布局）。
 5. `components/ChatPanel.tsx`：聊天渲染 + 输入 + 证据高亮。
-6. `components/FlowPanel.tsx`：React Flow 容器与节点 hover 事件。
-7. `components/CdgFlowNode.tsx`：节点卡片 UI、风险/重要度展示、展开细节。
+6. `components/FlowPanel.tsx`：React Flow 容器、节点 hover 事件、右上角“保存图修改”。
+7. `components/CdgFlowNode.tsx`：节点卡片 UI、风险/重要度展示、展开细节、重要度滑块（`nodrag` 防止被拖拽打断）。
 
 ---
 
@@ -207,8 +210,8 @@ conginstrument-web/
 | --- | --- |
 | `src/components/TopBar.tsx` | 顶栏：登录、新建会话、CID/version 展示 |
 | `src/components/ChatPanel.tsx` | 聊天窗口、输入发送、证据高亮与自动滚动 |
-| `src/components/FlowPanel.tsx` | React Flow 容器、节点 hover -> 证据 focus 回调 |
-| `src/components/CdgFlowNode.tsx` | 自定义节点卡片（风险色、重要度、展开/编辑细节） |
+| `src/components/FlowPanel.tsx` | React Flow 容器、节点 hover -> 证据 focus、保存图按钮 |
+| `src/components/CdgFlowNode.tsx` | 自定义节点卡片（风险色、重要度、展开/编辑细节、滑块），并拦截节点内交互的拖拽/平移冒泡 |
 
 ---
 
@@ -218,6 +221,9 @@ conginstrument-web/
 
 - 后端：`conginstrument/src/core/graph.ts`
 - 前端：`conginstrument-web/src/core/type.ts`
+
+当前节点还包含语义层级字段：`layer = intent | requirement | preference | risk`，
+用于在前端卡片中直接显示四层分类并支持后续论文导向扩展。
 
 协作规范：
 
@@ -289,6 +295,7 @@ Used endpoints:
 - `GET /api/conversations`
 - `POST /api/conversations`
 - `GET /api/conversations/:id`
+- `PUT /api/conversations/:id/graph`
 - `GET /api/conversations/:id/turns`
 - `POST /api/conversations/:id/turn`
 - `POST /api/conversations/:id/turn/stream` (SSE)
@@ -321,4 +328,4 @@ src/api/sseTurn.ts          # legacy/backup stream helper
 - Keep `src/core/type.ts` aligned with backend `src/core/graph.ts`.
 - When changing SSE payload fields, update `src/api/client.tsx` parser immediately.
 - When adding new node attributes, update rendering (`CdgFlowNode.tsx`) and layout (`graphToFlow.tsx`) together.
-
+- Node taxonomy now includes `layer = intent | requirement | preference | risk`; keep this field aligned with backend schema.

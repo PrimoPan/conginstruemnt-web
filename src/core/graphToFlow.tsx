@@ -1,6 +1,6 @@
 import type { Edge, Node } from "@xyflow/react";
 import { MarkerType } from "@xyflow/react";
-import type { CDG, CDGEdge, CDGNode, FlowNodeData, Severity } from "./type";
+import type { CDG, CDGEdge, CDGNode, FlowNodeData, NodeLayer, Severity } from "./type";
 
 const TYPE_LABEL: Record<string, string> = {
     goal: "目标",
@@ -18,6 +18,13 @@ const TYPE_ORDER: Record<string, number> = {
     fact: 3,
     belief: 4,
     question: 5,
+};
+
+const LAYER_LABEL: Record<NodeLayer, string> = {
+    intent: "Intent",
+    requirement: "Requirement",
+    preference: "Preference",
+    risk: "Risk",
 };
 
 const PRIMARY_SLOT_KEYS = new Set<string>([
@@ -64,19 +71,78 @@ function severityScore(sev?: Severity) {
     return 0;
 }
 
+function clamp01(x: any, fallback = 0.68) {
+    const n = Number(x);
+    if (!Number.isFinite(n)) return fallback;
+    return Math.max(0, Math.min(1, n));
+}
+
 function nodeMeta(node: CDGNode) {
     const parts = [TYPE_LABEL[node.type] || node.type];
+    if (node.layer) parts.push(LAYER_LABEL[node.layer] || node.layer);
     if (node.strength) parts.push(node.strength);
     if (typeof node.confidence === "number") parts.push(`c=${node.confidence.toFixed(2)}`);
     if (typeof node.importance === "number") parts.push(`i=${node.importance.toFixed(2)}`);
     return parts.join(" · ");
 }
 
-function edgeColor(type: string) {
-    if (type === "constraint") return "#b91c1c";
-    if (type === "conflicts_with") return "#c2410c";
-    if (type === "determine") return "#1d4ed8";
-    return "#4b5563";
+type NodePalette = {
+    hue: number;
+    sat: number;
+};
+
+function paletteForNode(node: CDGNode): NodePalette {
+    if (node.layer === "risk" || node.severity === "critical" || node.severity === "high") {
+        return { hue: 7, sat: 68 };
+    }
+    if (node.layer === "intent" || node.type === "goal") {
+        return { hue: 214, sat: 52 };
+    }
+    if (node.layer === "preference" || node.type === "preference") {
+        return { hue: 35, sat: 62 };
+    }
+    if (node.layer === "requirement" || node.type === "constraint") {
+        return { hue: 204, sat: 46 };
+    }
+    if (node.type === "question") {
+        return { hue: 266, sat: 38 };
+    }
+    if (node.type === "belief") {
+        return { hue: 188, sat: 40 };
+    }
+    return { hue: 218, sat: 22 };
+}
+
+function paletteToTone(
+    palette: NodePalette,
+    severity: Severity | undefined,
+    importance: number
+) {
+    const imp = clamp01(importance, 0.68);
+    const sevBoost = severity === "critical" ? 0.11 : severity === "high" ? 0.07 : severity === "medium" ? 0.04 : 0;
+    const depth = Math.min(1, imp + sevBoost);
+
+    const bgL = 98 - depth * 12;
+    const borderL = 84 - depth * 28;
+    const badgeL = 96 - depth * 9;
+    const shadowAlpha = 0.05 + depth * 0.08;
+
+    const bg = `hsl(${palette.hue} ${palette.sat}% ${bgL}%)`;
+    const border = `hsl(${palette.hue} ${palette.sat + 6}% ${borderL}%)`;
+    const badgeBg = `hsl(${palette.hue} ${Math.max(16, palette.sat - 14)}% ${badgeL}%)`;
+    const badgeBorder = `hsl(${palette.hue} ${Math.max(14, palette.sat - 10)}% ${Math.max(56, borderL - 6)}%)`;
+    const handle = `hsl(${palette.hue} ${Math.min(82, palette.sat + 14)}% ${Math.max(34, borderL - 16)}%)`;
+    const shadow = `0 1px 10px rgba(17, 24, 39, ${shadowAlpha.toFixed(3)})`;
+    return { bg, border, badgeBg, badgeBorder, handle, shadow };
+}
+
+function edgeColor(type: string, importance: number) {
+    const imp = clamp01(importance, 0.7);
+    const alpha = 0.45 + imp * 0.42;
+    if (type === "constraint") return `rgba(185, 28, 28, ${alpha.toFixed(3)})`;
+    if (type === "conflicts_with") return `rgba(194, 65, 12, ${alpha.toFixed(3)})`;
+    if (type === "determine") return `rgba(29, 78, 216, ${(alpha - 0.05).toFixed(3)})`;
+    return `rgba(75, 85, 99, ${(alpha - 0.08).toFixed(3)})`;
 }
 
 function pickRootGoalId(graph: CDG): string | null {
@@ -102,9 +168,14 @@ function slotKeyOfNode(node: CDGNode): string | null {
 
     if (node.type === "goal") return "slot:goal";
     if (node.type === "constraint" && /^预算(?:上限)?[:：]\s*[0-9]{2,}\s*元?$/.test(s)) return "slot:budget";
-    if (node.type === "constraint" && /^行程时长[:：]\s*[0-9]{1,3}\s*天$/.test(s)) return "slot:duration";
+    if (node.type === "constraint" && /^(?:总)?行程时长[:：]\s*[0-9]{1,3}\s*天$/.test(s)) return "slot:duration";
+    if (node.type === "constraint" && /^会议时长[:：]\s*[0-9]{1,3}\s*天$/.test(s)) return "slot:duration";
+    if ((node.type === "fact" || node.type === "constraint") && /^(?:城市时长|停留时长)[:：]\s*.+\s+[0-9]{1,3}\s*天$/.test(s)) {
+        return "slot:duration";
+    }
     if (node.type === "fact" && /^同行人数[:：]\s*[0-9]{1,3}\s*人$/.test(s)) return "slot:people";
     if (node.type === "fact" && /^目的地[:：]\s*.+$/.test(s)) return "slot:destination";
+    if (node.type === "constraint" && /^(?:会议关键日|关键会议日|论文汇报日)[:：]\s*.+$/.test(s)) return "slot:health";
     if ((node.type === "preference" || node.type === "constraint") && /^景点偏好[:：]\s*.+$/.test(s)) return "slot:scenic_preference";
     if (
         (node.type === "preference" || node.type === "constraint") &&
@@ -133,6 +204,9 @@ function laneForSlot(slot: string | null): SemanticLane {
 
 function laneForNode(node: CDGNode, slot: string | null): SemanticLane {
     if (slot) return laneForSlot(slot);
+    if (node.layer === "risk") return "constraint_high";
+    if (node.layer === "preference") return "preference";
+    if (node.layer === "intent") return "goal";
     if (node.type === "constraint") {
         if (severityScore(node.severity) >= 3) return "constraint_high";
         return "constraint";
@@ -319,13 +393,24 @@ function computePositions(graph: CDG) {
     return positions;
 }
 
-export function cdgToFlow(graph: CDG): { nodes: Node<FlowNodeData>[]; edges: Edge[] } {
+export function cdgToFlow(
+    graph: CDG,
+    opts?: {
+        importanceOverrides?: Record<string, number>;
+        onImportanceChange?: (nodeId: string, value: number) => void;
+    }
+): { nodes: Node<FlowNodeData>[]; edges: Edge[] } {
     const positions = computePositions(graph);
+    const nodeById = new Map((graph.nodes || []).map((n) => [n.id, n]));
+    const overrides = opts?.importanceOverrides || {};
 
     const nodes: Node<FlowNodeData>[] = (graph.nodes || []).map((n) => {
         const statement = cleanStatement(n.statement || n.id);
         const fullLabel = statement || n.id;
         const shortLabel = shorten(fullLabel);
+        const baseImportance = clamp01(n.importance, 0.68);
+        const effectiveImportance = clamp01(overrides[n.id], baseImportance);
+        const tone = paletteToTone(paletteForNode(n), n.severity, effectiveImportance);
         return {
             id: n.id,
             type: "cdgNode",
@@ -335,17 +420,31 @@ export function cdgToFlow(graph: CDG): { nodes: Node<FlowNodeData>[]; edges: Edg
                 fullLabel,
                 meta: nodeMeta(n),
                 nodeType: n.type,
+                layer: n.layer,
                 severity: n.severity,
-                importance: n.importance,
+                importance: effectiveImportance,
+                baseImportance,
                 tags: n.tags,
                 evidenceIds: n.evidenceIds,
                 sourceMsgIds: n.sourceMsgIds,
+                toneBg: tone.bg,
+                toneBorder: tone.border,
+                toneBadgeBg: tone.badgeBg,
+                toneBadgeBorder: tone.badgeBorder,
+                toneHandle: tone.handle,
+                toneShadow: tone.shadow,
+                onImportanceChange: opts?.onImportanceChange,
             },
         };
     });
 
     const edges: Edge[] = (graph.edges || []).map((e) => {
-        const stroke = edgeColor(e.type);
+        const fromNode = nodeById.get(e.from);
+        const toNode = nodeById.get(e.to);
+        const fromImportance = clamp01(overrides[e.from], clamp01(fromNode?.importance, 0.68));
+        const toImportance = clamp01(overrides[e.to], clamp01(toNode?.importance, 0.68));
+        const edgeImportance = Math.max(fromImportance, toImportance, 0.58);
+        const stroke = edgeColor(e.type, edgeImportance);
         const showLabel = e.type === "constraint" || e.type === "conflicts_with";
         return {
             id: e.id,
@@ -355,9 +454,9 @@ export function cdgToFlow(graph: CDG): { nodes: Node<FlowNodeData>[]; edges: Edg
             type: "smoothstep",
             pathOptions: { borderRadius: 16, offset: 14 },
             style: {
-                strokeWidth: e.type === "constraint" ? 2.05 : 1.4,
+                strokeWidth: (e.type === "constraint" ? 1.95 : 1.35) + edgeImportance * 0.7,
                 stroke,
-                opacity: e.type === "determine" ? 0.72 : 0.9,
+                opacity: e.type === "determine" ? 0.74 : 0.92,
             },
             markerEnd: {
                 type: MarkerType.ArrowClosed,

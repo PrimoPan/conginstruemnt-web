@@ -27,6 +27,7 @@ export default function App() {
   const [hoverFocus, setHoverFocus] = useState<NodeEvidenceFocus | null>(null);
 
   const [busy, setBusy] = useState(false);
+  const [savingGraph, setSavingGraph] = useState(false);
   const loggedIn = !!token;
 
   // 中断上一次流（避免串台）
@@ -177,6 +178,17 @@ export default function App() {
     }
   }
 
+  async function onSaveGraph(nextGraph: CDG) {
+    if (!token || !cid) return;
+    setSavingGraph(true);
+    try {
+      const out = await api.saveGraph(token, cid, nextGraph);
+      if (out?.graph) setGraph(out.graph);
+    } finally {
+      setSavingGraph(false);
+    }
+  }
+
   const disabled = !token || !cid;
 
   return (
@@ -204,7 +216,12 @@ export default function App() {
           </div>
 
           <div className="Right">
-            <FlowPanel graph={graph} onNodeEvidenceHover={setHoverFocus} />
+            <FlowPanel
+                graph={graph}
+                onNodeEvidenceHover={setHoverFocus}
+                onSaveGraph={onSaveGraph}
+                savingGraph={savingGraph}
+            />
           </div>
         </div>
       </div>

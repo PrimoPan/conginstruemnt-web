@@ -9,11 +9,13 @@ export type ConceptType =
 export type Strength = "hard" | "soft";
 export type Status = "proposed" | "confirmed" | "rejected" | "disputed";
 export type Severity = "low" | "medium" | "high" | "critical";
+export type NodeLayer = "intent" | "requirement" | "preference" | "risk";
 export type EdgeType = "enable" | "constraint" | "determine" | "conflicts_with";
 
 export type CDGNode = {
     id: string;
     type: ConceptType;
+    layer?: NodeLayer;
     strength?: Strength;
     statement: string;
     status: Status;
@@ -77,6 +79,12 @@ export type ConversationDetail = {
 
 export type ConversationCreateResponse = ConversationDetail;
 
+export type GraphSaveResponse = {
+    conversationId: string;
+    graph: CDG;
+    updatedAt: string;
+};
+
 export type TurnResponse = {
     assistantText: string;
     graphPatch: GraphPatch;
@@ -109,11 +117,20 @@ export type FlowNodeData = {
     fullLabel: string;
     meta: string;
     nodeType: ConceptType;
+    layer?: NodeLayer;
     severity?: Severity;
     importance?: number;
     tags?: string[];
     evidenceIds?: string[];
     sourceMsgIds?: string[];
+    baseImportance?: number;
+    toneBg?: string;
+    toneBorder?: string;
+    toneBadgeBg?: string;
+    toneBadgeBorder?: string;
+    toneHandle?: string;
+    toneShadow?: string;
+    onImportanceChange?: (nodeId: string, value: number) => void;
 };
 
 export type NodeEvidenceFocus = {
