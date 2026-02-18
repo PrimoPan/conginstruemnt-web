@@ -28,6 +28,7 @@ export default function App() {
 
   const [busy, setBusy] = useState(false);
   const [savingGraph, setSavingGraph] = useState(false);
+  const [graphGenerating, setGraphGenerating] = useState(false);
   const loggedIn = !!token;
 
   // 中断上一次流（避免串台）
@@ -87,6 +88,7 @@ export default function App() {
     setMessages([]);
     setGraph(emptyGraph);
     setHoverFocus(null);
+    setGraphGenerating(false);
 
     setBusy(true);
     try {
@@ -122,6 +124,7 @@ export default function App() {
     ]);
 
     setBusy(true);
+    setGraphGenerating(true);
 
     try {
       await api.turnStream(token, cid, userText, {
@@ -173,17 +176,29 @@ export default function App() {
       // 只有当前这次还挂着才收尾
       if (abortRef.current === ac) {
         setBusy(false);
+        setGraphGenerating(false);
         abortRef.current = null;
       }
     }
   }
 
-  async function onSaveGraph(nextGraph: CDG) {
+  async function onSaveGraph(
+      nextGraph: CDG,
+      opts?: { requestAdvice?: boolean; advicePrompt?: string }
+  ) {
     if (!token || !cid) return;
     setSavingGraph(true);
     try {
-      const out = await api.saveGraph(token, cid, nextGraph);
+      const out = await api.saveGraph(token, cid, nextGraph, opts);
       if (out?.graph) setGraph(out.graph);
+      if (out?.assistantText) {
+        setMessages((prev) => [...prev, { id: makeId("ga"), role: "assistant", text: out.assistantText || "" }]);
+      } else if (out?.adviceError) {
+        setMessages((prev) => [
+          ...prev,
+          { id: makeId("gae"), role: "assistant", text: `图已保存，但建议生成失败：${out.adviceError}` },
+        ]);
+      }
     } finally {
       setSavingGraph(false);
     }
@@ -218,6 +233,7 @@ export default function App() {
           <div className="Right">
             <FlowPanel
                 graph={graph}
+                generatingGraph={graphGenerating}
                 onNodeEvidenceHover={setHoverFocus}
                 onSaveGraph={onSaveGraph}
                 savingGraph={savingGraph}

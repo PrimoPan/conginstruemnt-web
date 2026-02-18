@@ -208,10 +208,22 @@ export const api = {
     getConversation: (token: string, cid: string) =>
         http<ConversationDetail>(`/api/conversations/${cid}`, {}, token),
 
-    saveGraph: (token: string, cid: string, graph: ConversationDetail["graph"]) =>
+    saveGraph: (
+        token: string,
+        cid: string,
+        graph: ConversationDetail["graph"],
+        opts?: { requestAdvice?: boolean; advicePrompt?: string }
+    ) =>
         http<GraphSaveResponse>(
             `/api/conversations/${cid}/graph`,
-            { method: "PUT", body: JSON.stringify({ graph }) },
+            {
+                method: "PUT",
+                body: JSON.stringify({
+                    graph,
+                    requestAdvice: !!opts?.requestAdvice,
+                    advicePrompt: opts?.advicePrompt || "",
+                }),
+            },
             token
         ),
 

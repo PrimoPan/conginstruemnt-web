@@ -27,12 +27,23 @@ const LAYER_LABEL: Record<NodeLayer, string> = {
     risk: "Risk",
 };
 
-const PRIMARY_SLOT_KEYS = new Set<string>([
-    "slot:people",
-    "slot:destination",
-    "slot:duration",
-    "slot:budget",
-]);
+function slotFamily(slot: string | null): string {
+    if (!slot) return "none";
+    if (slot.startsWith("slot:destination:")) return "destination";
+    if (slot.startsWith("slot:duration_city:")) return "duration_city";
+    if (slot === "slot:duration" || slot === "slot:duration_total") return "duration";
+    if (slot === "slot:people") return "people";
+    if (slot === "slot:budget") return "budget";
+    if (slot === "slot:lodging") return "lodging";
+    if (slot === "slot:scenic_preference") return "preference_slot";
+    if (slot === "slot:health") return "health";
+    return slot;
+}
+
+function isPrimarySlot(slot: string | null) {
+    const f = slotFamily(slot);
+    return f === "people" || f === "destination" || f === "duration" || f === "budget";
+}
 
 type SemanticLane =
     | "goal"
@@ -56,6 +67,17 @@ function cleanStatement(input: string) {
         .replace(/\s+/g, " ")
         .replace(/^(用户任务|任务|用户补充)[:：]\s*/i, "")
         .trim();
+}
+
+function readManualPosition(node: CDGNode): { x: number; y: number } | null {
+    const ui =
+        (node as any)?.value && typeof (node as any).value === "object"
+            ? (node as any).value.ui
+            : (node as any)?.ui;
+    const x = Number(ui?.x);
+    const y = Number(ui?.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    return { x, y };
 }
 
 function shorten(input: string, max = 22) {
@@ -171,10 +193,18 @@ function slotKeyOfNode(node: CDGNode): string | null {
     if (node.type === "constraint" && /^(?:总)?行程时长[:：]\s*[0-9]{1,3}\s*天$/.test(s)) return "slot:duration";
     if (node.type === "constraint" && /^会议时长[:：]\s*[0-9]{1,3}\s*天$/.test(s)) return "slot:duration";
     if ((node.type === "fact" || node.type === "constraint") && /^(?:城市时长|停留时长)[:：]\s*.+\s+[0-9]{1,3}\s*天$/.test(s)) {
-        return "slot:duration";
+        const m = s.match(/^(?:城市时长|停留时长)[:：]\s*(.+?)\s+[0-9]{1,3}\s*天$/);
+        const city = cleanStatement(m?.[1] || "");
+        if (city) return `slot:duration_city:${city}`;
+        return "slot:duration_city:unknown";
     }
     if (node.type === "fact" && /^同行人数[:：]\s*[0-9]{1,3}\s*人$/.test(s)) return "slot:people";
-    if (node.type === "fact" && /^目的地[:：]\s*.+$/.test(s)) return "slot:destination";
+    if (node.type === "fact" && /^目的地[:：]\s*.+$/.test(s)) {
+        const m = s.match(/^目的地[:：]\s*(.+)$/);
+        const city = cleanStatement(m?.[1] || "");
+        if (city) return `slot:destination:${city}`;
+        return "slot:destination:unknown";
+    }
     if (node.type === "constraint" && /^(?:会议关键日|关键会议日|论文汇报日)[:：]\s*.+$/.test(s)) return "slot:health";
     if ((node.type === "preference" || node.type === "constraint") && /^景点偏好[:：]\s*.+$/.test(s)) return "slot:scenic_preference";
     if (
@@ -192,13 +222,14 @@ function slotKeyOfNode(node: CDGNode): string | null {
 }
 
 function laneForSlot(slot: string | null): SemanticLane {
-    if (slot === "slot:people") return "people";
-    if (slot === "slot:destination") return "destination";
-    if (slot === "slot:duration") return "duration";
-    if (slot === "slot:budget") return "budget";
-    if (slot === "slot:lodging") return "lodging";
-    if (slot === "slot:scenic_preference") return "preference_slot";
-    if (slot === "slot:health") return "health";
+    const family = slotFamily(slot);
+    if (family === "people") return "people";
+    if (family === "destination") return "destination";
+    if (family === "duration" || family === "duration_city") return "duration";
+    if (family === "budget") return "budget";
+    if (family === "lodging") return "lodging";
+    if (family === "preference_slot") return "preference_slot";
+    if (family === "health") return "health";
     return "other";
 }
 
@@ -251,6 +282,25 @@ function relationMaps(edges: CDGEdge[]) {
     return { outgoing, incoming };
 }
 
+function averageNeighborY(
+    nodeId: string,
+    adjacency: Map<string, string[]>,
+    positions: Map<string, { x: number; y: number }>,
+    fallbackY: number
+) {
+    const neighbors = adjacency.get(nodeId) || [];
+    let sum = 0;
+    let count = 0;
+    for (const nid of neighbors) {
+        const p = positions.get(nid);
+        if (!p) continue;
+        sum += p.y;
+        count += 1;
+    }
+    if (!count) return fallbackY;
+    return sum / count;
+}
+
 function deriveSemanticMeta(graph: CDG) {
     const rootId = pickRootGoalId(graph);
     const slotByNodeId = new Map<string, string | null>();
@@ -277,7 +327,7 @@ function deriveSemanticMeta(graph: CDG) {
             continue;
         }
 
-        if (slot && PRIMARY_SLOT_KEYS.has(slot)) {
+        if (slot && isPrimarySlot(slot)) {
             levelById.set(n.id, 1);
             laneById.set(n.id, laneForSlot(slot));
             continue;
@@ -295,12 +345,12 @@ function deriveSemanticMeta(graph: CDG) {
         const toHealth = healthId ? out.some((e) => e.to === healthId) : false;
         const toPrimary = out.some((e) => {
             const toSlot = slotByNodeId.get(e.to) || null;
-            return !!toSlot && PRIMARY_SLOT_KEYS.has(toSlot);
+            return !!toSlot && isPrimarySlot(toSlot);
         });
         const toRoot = !!rootId && out.some((e) => e.to === rootId);
         const fromPrimary = inn.some((e) => {
             const fromSlot = slotByNodeId.get(e.from) || null;
-            return !!fromSlot && PRIMARY_SLOT_KEYS.has(fromSlot);
+            return !!fromSlot && isPrimarySlot(fromSlot);
         });
 
         let level = 3;
@@ -322,15 +372,29 @@ function deriveSemanticMeta(graph: CDG) {
 function computePositions(graph: CDG) {
     const positions = new Map<string, { x: number; y: number }>();
     const { rootId, levelById, laneById } = deriveSemanticMeta(graph);
+    const edges = graph.edges || [];
+    const adjacency = new Map<string, string[]>();
+    for (const e of edges) {
+        if (!adjacency.has(e.from)) adjacency.set(e.from, []);
+        if (!adjacency.has(e.to)) adjacency.set(e.to, []);
+        adjacency.get(e.from)!.push(e.to);
+        adjacency.get(e.to)!.push(e.from);
+    }
 
     const rootX = 90;
     const rootY = 340;
-    const levelGap = 370;
-    const laneGap = 225;
-    const rowGap = 146;
-    const maxRowsPerColumn = 4;
+    const levelGap = 360;
+    const laneBandGap = 210;
+    const rowGap = 122;
+    const columnGap = 205;
+    const maxRowsPerColumn = 5;
 
-    if (rootId) positions.set(rootId, { x: rootX, y: rootY });
+    for (const n of graph.nodes || []) {
+        const pinned = readManualPosition(n);
+        if (pinned) positions.set(n.id, pinned);
+    }
+
+    if (rootId && !positions.has(rootId)) positions.set(rootId, { x: rootX, y: rootY });
 
     const maxLevel = Math.max(...Array.from(levelById.values()), rootId ? 0 : 1);
 
@@ -355,9 +419,13 @@ function computePositions(graph: CDG) {
             if (!orderedLanes.includes(lane)) orderedLanes.push(lane);
         }
 
-        let laneCursor = 0;
-        for (const lane of orderedLanes) {
+        const laneCenterOffset = (orderedLanes.length - 1) / 2;
+        for (let laneIdx = 0; laneIdx < orderedLanes.length; laneIdx += 1) {
+            const lane = orderedLanes[laneIdx];
             const laneNodes = (byLane.get(lane) || []).slice().sort((a, b) => {
+                const ay = averageNeighborY(a.id, adjacency, positions, rootY);
+                const by = averageNeighborY(b.id, adjacency, positions, rootY);
+                if (ay !== by) return ay - by;
                 const bySeverity = severityScore(b.severity) - severityScore(a.severity);
                 if (bySeverity !== 0) return bySeverity;
                 const byImportance = (Number(b.importance) || 0) - (Number(a.importance) || 0);
@@ -367,11 +435,15 @@ function computePositions(graph: CDG) {
                 return cleanStatement(a.statement).localeCompare(cleanStatement(b.statement));
             });
 
-            const cols = Math.max(1, Math.ceil(laneNodes.length / maxRowsPerColumn));
+            const freeNodes = laneNodes.filter((n) => !positions.has(n.id));
+            if (!freeNodes.length) continue;
+
+            const cols = Math.max(1, Math.ceil(freeNodes.length / maxRowsPerColumn));
+            const laneCenterY = rootY + (laneIdx - laneCenterOffset) * laneBandGap;
             for (let col = 0; col < cols; col += 1) {
-                const chunk = laneNodes.slice(col * maxRowsPerColumn, (col + 1) * maxRowsPerColumn);
-                const x = rootX + level * levelGap + (laneCursor + col) * laneGap;
-                const yStart = rootY - ((chunk.length - 1) * rowGap) / 2;
+                const chunk = freeNodes.slice(col * maxRowsPerColumn, (col + 1) * maxRowsPerColumn);
+                const x = rootX + level * levelGap + col * columnGap;
+                const yStart = laneCenterY - ((chunk.length - 1) * rowGap) / 2;
                 for (let row = 0; row < chunk.length; row += 1) {
                     const n = chunk[row];
                     positions.set(n.id, {
@@ -380,7 +452,6 @@ function computePositions(graph: CDG) {
                     });
                 }
             }
-            laneCursor += cols;
         }
     }
 
@@ -398,6 +469,7 @@ export function cdgToFlow(
     opts?: {
         importanceOverrides?: Record<string, number>;
         onImportanceChange?: (nodeId: string, value: number) => void;
+        onNodePatch?: (nodeId: string, patch: Partial<CDGNode>) => void;
     }
 ): { nodes: Node<FlowNodeData>[]; edges: Edge[] } {
     const positions = computePositions(graph);
@@ -419,10 +491,17 @@ export function cdgToFlow(
                 shortLabel,
                 fullLabel,
                 meta: nodeMeta(n),
+                rawNode: n,
                 nodeType: n.type,
                 layer: n.layer,
                 severity: n.severity,
                 importance: effectiveImportance,
+                confidence: n.confidence,
+                status: n.status,
+                strength: n.strength,
+                locked: n.locked,
+                key: n.key,
+                value: n.value,
                 baseImportance,
                 tags: n.tags,
                 evidenceIds: n.evidenceIds,
@@ -434,6 +513,7 @@ export function cdgToFlow(
                 toneHandle: tone.handle,
                 toneShadow: tone.shadow,
                 onImportanceChange: opts?.onImportanceChange,
+                onNodePatch: opts?.onNodePatch,
             },
         };
     });
