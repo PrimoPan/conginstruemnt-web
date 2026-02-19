@@ -31,12 +31,15 @@ function slotFamily(slot: string | null): string {
     if (!slot) return "none";
     if (slot.startsWith("slot:destination:")) return "destination";
     if (slot.startsWith("slot:duration_city:")) return "duration_city";
+    if (slot.startsWith("slot:meeting_critical:")) return "meeting_critical";
+    if (slot.startsWith("slot:constraint:")) return "generic_constraint";
     if (slot === "slot:duration" || slot === "slot:duration_total") return "duration";
     if (slot === "slot:people") return "people";
     if (slot === "slot:budget") return "budget";
     if (slot === "slot:lodging") return "lodging";
     if (slot === "slot:scenic_preference") return "preference_slot";
     if (slot === "slot:health") return "health";
+    if (slot === "slot:language") return "language";
     return slot;
 }
 
@@ -48,6 +51,8 @@ function isPrimarySlot(slot: string | null) {
 type SemanticLane =
     | "goal"
     | "health"
+    | "meeting_critical"
+    | "language"
     | "people"
     | "destination"
     | "duration"
@@ -205,7 +210,11 @@ function slotKeyOfNode(node: CDGNode): string | null {
         if (city) return `slot:destination:${city}`;
         return "slot:destination:unknown";
     }
-    if (node.type === "constraint" && /^(?:会议关键日|关键会议日|论文汇报日)[:：]\s*.+$/.test(s)) return "slot:health";
+    if (node.type === "constraint" && /^(?:会议关键日|关键会议日|论文汇报日|关键日)[:：]\s*.+$/.test(s)) {
+        const m = s.match(/^(?:会议关键日|关键会议日|论文汇报日|关键日)[:：]\s*(.+)$/);
+        const detail = cleanStatement(m?.[1] || "critical");
+        return `slot:meeting_critical:${detail || "critical"}`;
+    }
     if ((node.type === "preference" || node.type === "constraint") && /^景点偏好[:：]\s*.+$/.test(s)) return "slot:scenic_preference";
     if (
         (node.type === "preference" || node.type === "constraint") &&
@@ -214,6 +223,18 @@ function slotKeyOfNode(node: CDGNode): string | null {
             /(五星|四星|三星).{0,6}(酒店)/.test(s))
     ) {
         return "slot:lodging";
+    }
+    if (
+        node.type === "constraint" &&
+        (/^语言约束[:：]\s*.+$/.test(s) ||
+            /不会英语|不会英文|英语不好|英文不好|语言不通|语言障碍|翻译|口译|同传|不懂西语|不懂法语|不会当地语言|沟通困难|language barrier|translation|speak english/i.test(s))
+    ) {
+        return "slot:language";
+    }
+    if (node.type === "constraint" && /^(关键约束|法律约束|安全约束|出行约束|行程约束)[:：]\s*.+$/.test(s)) {
+        const m = s.match(/^(?:关键约束|法律约束|安全约束|出行约束|行程约束)[:：]\s*(.+)$/);
+        const detail = cleanStatement(m?.[1] || "constraint");
+        return `slot:constraint:${detail || "constraint"}`;
     }
     if (node.type === "constraint" && /心脏|心肺|冠心|心血管|高血压|糖尿病|哮喘|慢性病|老人|不能爬山|不能久走|急救|cardiac|heart|health/i.test(s)) {
         return "slot:health";
@@ -230,6 +251,9 @@ function laneForSlot(slot: string | null): SemanticLane {
     if (family === "lodging") return "lodging";
     if (family === "preference_slot") return "preference_slot";
     if (family === "health") return "health";
+    if (family === "meeting_critical") return "meeting_critical";
+    if (family === "language") return "language";
+    if (family === "generic_constraint") return "constraint_high";
     return "other";
 }
 
@@ -256,6 +280,8 @@ function laneOrder(level: number): SemanticLane[] {
     }
     return [
         "health",
+        "meeting_critical",
+        "language",
         "constraint_high",
         "constraint",
         "lodging",
@@ -317,6 +343,10 @@ function deriveSemanticMeta(graph: CDG) {
     const laneById = new Map<string, SemanticLane>();
 
     const healthId = slotNodeId.get("slot:health") || null;
+    const meetingNodeIds = Array.from(slotNodeId.entries())
+        .filter(([slot]) => slot.startsWith("slot:meeting_critical:"))
+        .map(([, id]) => id);
+    const riskAnchorIds = [healthId, ...meetingNodeIds].filter(Boolean) as string[];
 
     for (const n of graph.nodes || []) {
         const slot = slotByNodeId.get(n.id) || null;
@@ -338,11 +368,16 @@ function deriveSemanticMeta(graph: CDG) {
             laneById.set(n.id, "health");
             continue;
         }
+        if (slotFamily(slot) === "meeting_critical") {
+            levelById.set(n.id, 2);
+            laneById.set(n.id, "meeting_critical");
+            continue;
+        }
 
         const out = outgoing.get(n.id) || [];
         const inn = incoming.get(n.id) || [];
 
-        const toHealth = healthId ? out.some((e) => e.to === healthId) : false;
+        const toHealth = riskAnchorIds.length ? out.some((e) => riskAnchorIds.includes(e.to)) : false;
         const toPrimary = out.some((e) => {
             const toSlot = slotByNodeId.get(e.to) || null;
             return !!toSlot && isPrimarySlot(toSlot);
@@ -472,11 +507,26 @@ export function cdgToFlow(
         onNodePatch?: (nodeId: string, patch: Partial<CDGNode>) => void;
     }
 ): { nodes: Node<FlowNodeData>[]; edges: Edge[] } {
-    const positions = computePositions(graph);
-    const nodeById = new Map((graph.nodes || []).map((n) => [n.id, n]));
+    const safeNodes = (graph.nodes || []).filter(
+        (n): n is CDGNode => !!n && typeof n.id === "string" && !!n.id.trim()
+    );
+    const safeNodeIdSet = new Set(safeNodes.map((n) => n.id));
+    const safeEdges = (graph.edges || []).filter(
+        (e): e is CDGEdge =>
+            !!e &&
+            typeof e.id === "string" &&
+            !!e.id &&
+            typeof e.from === "string" &&
+            typeof e.to === "string" &&
+            safeNodeIdSet.has(e.from) &&
+            safeNodeIdSet.has(e.to)
+    );
+    const safeGraph: CDG = { ...graph, nodes: safeNodes, edges: safeEdges };
+    const positions = computePositions(safeGraph);
+    const nodeById = new Map(safeNodes.map((n) => [n.id, n]));
     const overrides = opts?.importanceOverrides || {};
 
-    const nodes: Node<FlowNodeData>[] = (graph.nodes || []).map((n) => {
+    const nodes: Node<FlowNodeData>[] = safeNodes.map((n) => {
         const statement = cleanStatement(n.statement || n.id);
         const fullLabel = statement || n.id;
         const shortLabel = shorten(fullLabel);
@@ -518,7 +568,7 @@ export function cdgToFlow(
         };
     });
 
-    const edges: Edge[] = (graph.edges || []).map((e) => {
+    const edges: Edge[] = safeEdges.map((e) => {
         const fromNode = nodeById.get(e.from);
         const toNode = nodeById.get(e.to);
         const fromImportance = clamp01(overrides[e.from], clamp01(fromNode?.importance, 0.68));

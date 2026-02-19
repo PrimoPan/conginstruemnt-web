@@ -7,6 +7,7 @@ import type { CDG, NodeEvidenceFocus, TurnResponse, TurnStreamErrorData } from "
 import { TopBar } from "./components/TopBar";
 import { ChatPanel, Msg } from "./components/ChatPanel";
 import { FlowPanel } from "./components/FlowPanel";
+import { normalizeGraphClient } from "./core/graphSafe";
 
 const emptyGraph: CDG = { id: "", version: 0, nodes: [], edges: [] };
 
@@ -46,7 +47,7 @@ export default function App() {
     (async () => {
       try {
         const conv = await api.getConversation(token, cid);
-        setGraph(conv.graph);
+        setGraph(normalizeGraphClient(conv.graph));
 
         const turns = await api.getTurns(token, cid, 120);
         const ms: Msg[] = [];
@@ -95,7 +96,7 @@ export default function App() {
       const r = await api.createConversation(token, "新对话");
       setCid(r.conversationId);
       localStorage.setItem("ci_cid", r.conversationId);
-      setGraph(r.graph);
+      setGraph(normalizeGraphClient(r.graph));
     } finally {
       setBusy(false);
     }
@@ -150,7 +151,7 @@ export default function App() {
               )
           );
 
-          if (out?.graph) setGraph(out.graph);
+          if (out?.graph) setGraph(normalizeGraphClient(out.graph));
         },
 
         onError: (err: TurnStreamErrorData) => {
@@ -190,7 +191,7 @@ export default function App() {
     setSavingGraph(true);
     try {
       const out = await api.saveGraph(token, cid, nextGraph, opts);
-      if (out?.graph) setGraph(out.graph);
+      if (out?.graph) setGraph(normalizeGraphClient(out.graph));
       if (out?.assistantText) {
         setMessages((prev) => [...prev, { id: makeId("ga"), role: "assistant", text: out.assistantText || "" }]);
       } else if (out?.adviceError) {

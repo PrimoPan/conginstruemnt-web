@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import "@xyflow/react/dist/style.css";
 import type { CDG, CDGNode, EdgeType, NodeEvidenceFocus } from "../core/type";
 import { cdgToFlow } from "../core/graphToFlow";
+import { normalizeGraphClient } from "../core/graphSafe";
 import { CdgFlowNode } from "./CdgFlowNode";
 import { FlowCanvas, useFlowState } from "./flow/FlowCanvas";
 import { FlowInspector } from "./flow/FlowInspector";
@@ -32,17 +33,18 @@ export function FlowPanel(props: {
     savingGraph?: boolean;
 }) {
     const { graph, generatingGraph, onNodeEvidenceHover, onSaveGraph, savingGraph } = props;
-    const [draftGraph, setDraftGraph] = useState<CDG>(graph);
+    const [draftGraph, setDraftGraph] = useState<CDG>(normalizeGraphClient(graph));
     const [dirty, setDirty] = useState(false);
     const [selectedNodeId, setSelectedNodeId] = useState<string>("");
     const [selectedEdgeId, setSelectedEdgeId] = useState<string>("");
     const [saveError, setSaveError] = useState("");
     const dragStartRef = useRef<Record<string, { x: number; y: number }>>({});
+    const dragAllowedRef = useRef<Record<string, boolean>>({});
 
     const { nodes, edges, setNodes, setEdges, onNodesChange, onEdgesChange } = useFlowState();
 
     useEffect(() => {
-        setDraftGraph(graph);
+        setDraftGraph(normalizeGraphClient(graph));
         setDirty(false);
         setSelectedNodeId("");
         setSelectedEdgeId("");
@@ -163,14 +165,27 @@ export function FlowPanel(props: {
         setSelectedEdgeId("");
     }, [nodes, selectedNodeId, updateDraftGraph]);
 
-    const onNodeDragStart = useCallback((_: any, node: any) => {
+    const onNodeDragStart = useCallback((evt: any, node: any) => {
         dragStartRef.current[node.id] = { x: node.position.x, y: node.position.y };
+        const target = evt?.target as HTMLElement | null;
+        dragAllowedRef.current[node.id] = !!target?.closest?.(".CdgNode__dragHandle");
     }, []);
 
     const onNodeDragStop = useCallback(
         (_: any, dragged: any) => {
             const start = dragStartRef.current[dragged.id];
             delete dragStartRef.current[dragged.id];
+            const dragAllowed = dragAllowedRef.current[dragged.id] !== false;
+            delete dragAllowedRef.current[dragged.id];
+            if (!dragAllowed && start) {
+                updateDraftGraph((prev) => ({
+                    ...prev,
+                    nodes: (prev.nodes || []).map((n) =>
+                        n.id === dragged.id ? ensureNodeUi(n, start.x, start.y) : n
+                    ),
+                }));
+                return;
+            }
             const moveDist = start
                 ? Math.hypot(dragged.position.x - start.x, dragged.position.y - start.y)
                 : 999;

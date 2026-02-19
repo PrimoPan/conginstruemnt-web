@@ -115,7 +115,8 @@ SSE 事件：
 1. `App.tsx`：全局状态编排（token/cid/messages/graph/busy），串联 TopBar + Chat + Flow。
 2. `api/client.tsx`：统一 API 调用和 SSE 解析入口。
 3. `core/type.ts`：与后端 CDG/patch/turn 的核心类型契约。
-4. `core/graphToFlow.tsx`：把后端 CDG 映射成 React Flow 节点与边（分层布局）。
+4. `core/graphToFlow.tsx`：把后端 CDG 映射成 React Flow 节点与边（分层布局、非法边过滤、meeting/language/generic constraint 槽位映射）。
+5. `core/graphSafe.ts`：前端入站 graph 快照容错归一化（首轮/异常数据兜底）。
 5. `components/ChatPanel.tsx`：聊天渲染 + 输入 + 证据高亮。
 6. `components/FlowPanel.tsx`：流程图主编排（草稿图状态、选中状态、增删保存、拖拽落位重挂）。
 7. `components/CdgFlowNode.tsx`：自定义节点卡片（纯展示）。
@@ -220,6 +221,7 @@ conginstrument-web/
 | --- | --- |
 | `src/core/type.ts` | 与后端对齐的类型定义（CDG、patch、turn、SSE data） |
 | `src/core/graphToFlow.tsx` | CDG -> React Flow 节点/边转换、层次布局、样式映射 |
+| `src/core/graphSafe.ts` | 规范化后端返回的 graph 快照，防止首轮渲染因脏数据报错 |
 
 #### 8.7 `src/components/` 文件
 
@@ -339,6 +341,7 @@ src/components/FlowPanel.tsx# flow panel + add/delete subtree + edge edit + save
 src/components/CdgFlowNode.tsx # custom editable node card (handle-only drag)
 src/core/type.ts            # shared protocol types
 src/core/graphToFlow.tsx    # CDG -> Flow mapping/layout
+src/core/graphSafe.ts       # incoming graph snapshot normalizer (runtime safety)
 src/api/client.tsx          # primary API/SSE client
 src/api/turnStream.ts       # legacy/backup stream helper
 src/api/sseTurn.ts          # legacy/backup stream helper
