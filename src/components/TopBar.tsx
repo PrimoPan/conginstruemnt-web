@@ -14,7 +14,7 @@ export function TopBar(props: {
         <div className="TopBar">
             <div className="TopBar__left">
                 <div className="Brand">CogInstrument</div>
-                <div className="Sub">UIST-style demo (CN)</div>
+                <div className="Sub">Research demo (CN)</div>
             </div>
 
             <div className="TopBar__right">
