@@ -14,8 +14,9 @@ Language / 语言：
 1. 用户登录与新建会话。
 2. 左侧聊天（流式 token 实时显示）。
 3. 右侧 CDG 流程图渲染（React Flow）。
-4. 节点 hover 反向高亮聊天证据片段。
-5. 与后端接口的类型对齐与协议消费（JSON + SSE）。
+4. 可编辑流程图（节点参数、边类型、拖拽重挂父子关系）。
+5. 节点 hover 反向高亮聊天证据片段。
+6. 与后端接口的类型对齐与协议消费（JSON + SSE）。
 
 这是一个人机协同系统前端，不只是聊天 UI。
 
@@ -73,7 +74,16 @@ REACT_APP_API_BASE_URL=http://localhost:3001
 
 - 发送消息时走 SSE 接口，`token` 事件逐步刷新 assistant 文本。
 - `done` 到达后更新整张图。
+- 生成新图期间，右侧标题显示：`意图分析图生成中`。
 - 鼠标 hover 流程图节点时，左侧聊天会高亮证据词（`evidenceIds`）。
+- 右上角“保存并生成建议”会把前端完整编辑图写回后端，并可选触发“基于新图”的建议生成。
+- 工具栏支持新增节点；删除时会删除“当前节点 + 可达子树（沿 outgoing 边）”。
+- 点击节点后在右上 `Inspector` 编辑主要参数：`statement/type/layer/status/strength/severity/confidence/importance/tags/evidenceIds/sourceMsgIds/key/value`。
+- 点击边后会出现“边类型”下拉，可改为 `enable/constraint/determine/conflicts_with`。
+- 拖拽节点并释放到另一个节点附近，会重挂为其子节点（默认新增 `enable` 边，且自动避免成环）。
+- 节点卡片改为“纯展示”，编辑入口统一在右上 `Inspector`，避免编辑与拖拽冲突。
+- 节点支持整卡拖拽；拖拽释放到其他节点附近会自动重挂父子关系（防成环）。
+- 布局按 `destination(city)` 与 `duration_city(city)` 家族分组，同层目的地（如米兰/巴塞）并列展示。
 
 ---
 
@@ -85,6 +95,7 @@ REACT_APP_API_BASE_URL=http://localhost:3001
 - `GET /api/conversations`
 - `POST /api/conversations`
 - `GET /api/conversations/:id`
+- `PUT /api/conversations/:id/graph`（保存前端修改后的图，可选请求建议）
 - `GET /api/conversations/:id/turns`
 - `POST /api/conversations/:id/turn`
 - `POST /api/conversations/:id/turn/stream`（SSE）
@@ -104,10 +115,15 @@ SSE 事件：
 1. `App.tsx`：全局状态编排（token/cid/messages/graph/busy），串联 TopBar + Chat + Flow。
 2. `api/client.tsx`：统一 API 调用和 SSE 解析入口。
 3. `core/type.ts`：与后端 CDG/patch/turn 的核心类型契约。
-4. `core/graphToFlow.tsx`：把后端 CDG 映射成 React Flow 节点与边（分层布局）。
+4. `core/graphToFlow.tsx`：把后端 CDG 映射成 React Flow 节点与边（分层布局、非法边过滤、meeting/language/generic constraint 槽位映射）。
+5. `core/graphSafe.ts`：前端入站 graph 快照容错归一化（首轮/异常数据兜底）。
 5. `components/ChatPanel.tsx`：聊天渲染 + 输入 + 证据高亮。
-6. `components/FlowPanel.tsx`：React Flow 容器与节点 hover 事件。
-7. `components/CdgFlowNode.tsx`：节点卡片 UI、风险/重要度展示、展开细节。
+6. `components/FlowPanel.tsx`：流程图主编排（草稿图状态、选中状态、增删保存、拖拽落位重挂）。
+7. `components/CdgFlowNode.tsx`：自定义节点卡片（纯展示）。
+8. `components/flow/FlowCanvas.tsx`：React Flow 画布层（渲染、hover、高亮回传）。
+9. `components/flow/FlowToolbar.tsx`：工具栏（新增、保存、状态）。
+10. `components/flow/FlowInspector.tsx`：右上编辑面板（节点/边参数、删除子树）。
+11. `components/flow/graphDraftUtils.ts`：草稿图辅助函数（ID、环检测、子树删除等）。
 
 ---
 
@@ -149,7 +165,12 @@ conginstrument-web/
       ├─ TopBar.tsx
       ├─ ChatPanel.tsx
       ├─ FlowPanel.tsx
-      └─ CdgFlowNode.tsx
+      ├─ CdgFlowNode.tsx
+      └─ flow/
+         ├─ FlowCanvas.tsx
+         ├─ FlowToolbar.tsx
+         ├─ FlowInspector.tsx
+         └─ graphDraftUtils.ts
 ```
 
 #### 8.2 根目录文件
@@ -200,6 +221,7 @@ conginstrument-web/
 | --- | --- |
 | `src/core/type.ts` | 与后端对齐的类型定义（CDG、patch、turn、SSE data） |
 | `src/core/graphToFlow.tsx` | CDG -> React Flow 节点/边转换、层次布局、样式映射 |
+| `src/core/graphSafe.ts` | 规范化后端返回的 graph 快照，防止首轮渲染因脏数据报错 |
 
 #### 8.7 `src/components/` 文件
 
@@ -207,8 +229,12 @@ conginstrument-web/
 | --- | --- |
 | `src/components/TopBar.tsx` | 顶栏：登录、新建会话、CID/version 展示 |
 | `src/components/ChatPanel.tsx` | 聊天窗口、输入发送、证据高亮与自动滚动 |
-| `src/components/FlowPanel.tsx` | React Flow 容器、节点 hover -> 证据 focus 回调 |
-| `src/components/CdgFlowNode.tsx` | 自定义节点卡片（风险色、重要度、展开/编辑细节） |
+| `src/components/FlowPanel.tsx` | 图编辑主控：草稿状态、选中状态、拖拽落位、保存联动 |
+| `src/components/CdgFlowNode.tsx` | 自定义节点卡片（展示态） |
+| `src/components/flow/FlowCanvas.tsx` | React Flow 画布层与交互事件桥接 |
+| `src/components/flow/FlowToolbar.tsx` | 新增节点、保存、脏状态与生成状态展示 |
+| `src/components/flow/FlowInspector.tsx` | 右上编辑面板，支持删“选中节点及子树” |
+| `src/components/flow/graphDraftUtils.ts` | 图编辑工具函数（防环、子树收集、位置写回） |
 
 ---
 
@@ -218,6 +244,9 @@ conginstrument-web/
 
 - 后端：`conginstrument/src/core/graph.ts`
 - 前端：`conginstrument-web/src/core/type.ts`
+
+当前节点还包含语义层级字段：`layer = intent | requirement | preference | risk`，
+用于在前端卡片中直接显示四层分类并支持后续论文导向扩展。
 
 协作规范：
 
@@ -236,6 +265,7 @@ conginstrument-web/
 2. “SSE 断流”：检查后端 `Content-Type` 与代理是否缓冲。
 3. “布局被聊天撑高”：检查 `App.css` 中 `App/Main/Left/Right` 的 `min-height:0 + overflow:hidden`。
 4. “证据高亮无效”：确认节点带有 `evidenceIds` 或 `sourceMsgIds`。
+5. “保存后没有建议”：检查 `PUT /graph` 请求是否带 `requestAdvice=true`，以及后端返回的 `assistantText/adviceError`。
 
 ---
 
@@ -248,8 +278,9 @@ conginstrument-web/
 1. Login + conversation creation.
 2. Left chat panel with streaming tokens.
 3. Right CDG visualization (React Flow).
-4. Node-hover evidence highlighting back in chat.
-5. Type-aligned protocol consumption from backend (JSON + SSE).
+4. Editable graph UI (node fields, edge type, drag-to-reparent).
+5. Node-hover evidence highlighting back in chat.
+6. Type-aligned protocol consumption from backend (JSON + SSE).
 
 ---
 
@@ -289,6 +320,7 @@ Used endpoints:
 - `GET /api/conversations`
 - `POST /api/conversations`
 - `GET /api/conversations/:id`
+- `PUT /api/conversations/:id/graph` (supports `requestAdvice` + `advicePrompt`)
 - `GET /api/conversations/:id/turns`
 - `POST /api/conversations/:id/turn`
 - `POST /api/conversations/:id/turn/stream` (SSE)
@@ -305,10 +337,11 @@ SSE events consumed by frontend:
 src/App.tsx                 # app state orchestration
 src/components/TopBar.tsx   # top toolbar
 src/components/ChatPanel.tsx# chat UI + evidence highlighting
-src/components/FlowPanel.tsx# react-flow panel
-src/components/CdgFlowNode.tsx # custom node card
+src/components/FlowPanel.tsx# flow panel + add/delete subtree + edge edit + save/advice trigger
+src/components/CdgFlowNode.tsx # custom editable node card (handle-only drag)
 src/core/type.ts            # shared protocol types
 src/core/graphToFlow.tsx    # CDG -> Flow mapping/layout
+src/core/graphSafe.ts       # incoming graph snapshot normalizer (runtime safety)
 src/api/client.tsx          # primary API/SSE client
 src/api/turnStream.ts       # legacy/backup stream helper
 src/api/sseTurn.ts          # legacy/backup stream helper
@@ -321,4 +354,4 @@ src/api/sseTurn.ts          # legacy/backup stream helper
 - Keep `src/core/type.ts` aligned with backend `src/core/graph.ts`.
 - When changing SSE payload fields, update `src/api/client.tsx` parser immediately.
 - When adding new node attributes, update rendering (`CdgFlowNode.tsx`) and layout (`graphToFlow.tsx`) together.
-
+- Node taxonomy now includes `layer = intent | requirement | preference | risk`; keep this field aligned with backend schema.

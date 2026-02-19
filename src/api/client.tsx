@@ -4,6 +4,7 @@ import type {
     ConversationSummary,
     ConversationDetail,
     ConversationCreateResponse,
+    GraphSaveResponse,
     TurnResponse,
     TurnItem,
     TurnStreamStartData,
@@ -206,6 +207,25 @@ export const api = {
 
     getConversation: (token: string, cid: string) =>
         http<ConversationDetail>(`/api/conversations/${cid}`, {}, token),
+
+    saveGraph: (
+        token: string,
+        cid: string,
+        graph: ConversationDetail["graph"],
+        opts?: { requestAdvice?: boolean; advicePrompt?: string }
+    ) =>
+        http<GraphSaveResponse>(
+            `/api/conversations/${cid}/graph`,
+            {
+                method: "PUT",
+                body: JSON.stringify({
+                    graph,
+                    requestAdvice: !!opts?.requestAdvice,
+                    advicePrompt: opts?.advicePrompt || "",
+                }),
+            },
+            token
+        ),
 
     getTurns: (token: string, cid: string, limit = 80) =>
         http<TurnItem[]>(`/api/conversations/${cid}/turns?limit=${limit}`, {}, token),

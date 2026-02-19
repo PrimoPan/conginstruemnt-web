@@ -107,10 +107,23 @@ body {
   height: 44px;
   display: flex;
   align-items: center;
+  justify-content: space-between;
   padding: 0 12px;
   border-bottom: 1px solid var(--border);
   color: var(--muted);
   font-size: 13px;
+}
+
+.FlowStatusTag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  color: #1d4ed8;
+  border: 1px solid rgba(37, 99, 235, 0.25);
+  background: rgba(219, 234, 254, 0.82);
 }
 
 .Input {
@@ -155,6 +168,189 @@ body {
   flex: 1;
   min-height: 0;
   overflow: hidden;
+  position: relative;
+}
+
+.FlowToolbar {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 7;
+  display: flex;
+  align-items: stretch;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.FlowInspector {
+  position: absolute;
+  top: 88px;
+  right: 10px;
+  width: 320px;
+  max-height: calc(100% - 100px);
+  overflow: auto;
+  z-index: 8;
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(15, 23, 42, 0.16);
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(6px);
+  box-shadow: 0 6px 24px rgba(15, 23, 42, 0.12);
+  display: grid;
+  gap: 8px;
+}
+
+.FlowInspector__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.FlowInspector__title {
+  font-size: 13px;
+  font-weight: 700;
+  color: rgba(15, 23, 42, 0.9);
+}
+
+.FlowInspector__hint {
+  font-size: 12px;
+  color: rgba(15, 23, 42, 0.58);
+}
+
+.FlowInspector__fieldGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.FlowInspector__fieldLabel {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  color: rgba(15, 23, 42, 0.84);
+}
+
+.FlowInspector__fieldLabel--check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.FlowInspector__input,
+.FlowInspector__select {
+  height: 30px;
+  border-radius: 8px;
+  border: 1px solid rgba(15, 23, 42, 0.2);
+  padding: 0 8px;
+  font-size: 12px;
+  box-sizing: border-box;
+  background: #fff;
+}
+
+.FlowInspector__editor {
+  width: 100%;
+  min-height: 84px;
+  resize: vertical;
+  border-radius: 8px;
+  border: 1px solid rgba(15, 23, 42, 0.2);
+  padding: 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.FlowInspector__sliderLabel {
+  font-size: 12px;
+  color: rgba(15, 23, 42, 0.82);
+  display: grid;
+  gap: 4px;
+}
+
+.FlowInspector__sliderLabel input[type="range"] {
+  width: 100%;
+  accent-color: #2563eb;
+}
+
+.FlowInspector__error {
+  color: #b91c1c;
+  font-size: 12px;
+}
+
+.FlowToolbar__group {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  justify-content: flex-end;
+}
+
+.FlowToolbar__btn {
+  height: 30px;
+  border-radius: 9px;
+  font-size: 12px;
+  line-height: 1;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(4px);
+}
+
+.FlowToolbar__btnDanger {
+  border-color: rgba(185, 28, 28, 0.28);
+  color: #991b1b;
+}
+
+.FlowToolbar__save {
+  height: 30px;
+  border-radius: 9px;
+  font-size: 12px;
+  line-height: 1;
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(4px);
+}
+
+.FlowToolbar__dirty {
+  font-size: 11px;
+  color: #7c2d12;
+  border: 1px solid rgba(194, 65, 12, 0.25);
+  background: rgba(255, 237, 213, 0.85);
+  border-radius: 999px;
+  padding: 2px 7px;
+}
+
+.FlowToolbar__edgeEditor {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(15, 23, 42, 0.14);
+  background: rgba(255, 255, 255, 0.92);
+  font-size: 12px;
+  color: rgba(15, 23, 42, 0.78);
+  justify-content: flex-end;
+  align-self: flex-end;
+}
+
+.FlowToolbar__edgeSelect {
+  height: 26px;
+  border-radius: 6px;
+  border: 1px solid rgba(15, 23, 42, 0.2);
+  padding: 0 6px;
+  font-size: 12px;
+  background: #fff;
+}
+
+.FlowToolbar__error {
+  position: absolute;
+  top: 48px;
+  right: 0;
+  max-width: 220px;
+  font-size: 12px;
+  color: #b91c1c;
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid rgba(185, 28, 28, 0.28);
+  border-radius: 8px;
+  padding: 6px 8px;
 }
 
 .ChatComposer {
@@ -244,10 +440,29 @@ body {
   word-break: break-word;
 }
 
+.CdgNode__titleRow {
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  gap: 8px;
+  align-items: start;
+}
+
 .CdgNode__titleWrap {
   display: flex;
   align-items: flex-start;
+  justify-content: space-between;
   gap: 8px;
+  min-width: 0;
+}
+
+.CdgNode__dragHandle {
+  cursor: move;
+  user-select: none;
+  color: rgba(15, 23, 42, 0.42);
+  font-size: 14px;
+  line-height: 1;
+  letter-spacing: -1px;
+  margin-top: 1px;
 }
 
 .CdgNode__badge {
@@ -276,6 +491,49 @@ body {
   gap: 4px;
 }
 
+.CdgNode__fieldGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.CdgNode__fieldLabel {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  color: rgba(15, 23, 42, 0.82);
+}
+
+.CdgNode__fieldLabel--check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.CdgNode__input,
+.CdgNode__select {
+  height: 28px;
+  border-radius: 7px;
+  border: 1px solid rgba(15, 23, 42, 0.18);
+  padding: 0 8px;
+  font-size: 12px;
+  box-sizing: border-box;
+  background: #fff;
+}
+
+.CdgNode__sliderLabel {
+  margin-top: 2px;
+  font-size: 12px;
+  color: rgba(15, 23, 42, 0.78);
+  display: grid;
+  gap: 4px;
+}
+
+.CdgNode__sliderLabel input[type="range"] {
+  width: 100%;
+  accent-color: #2563eb;
+}
+
 .CdgNode__toggle {
   margin-top: 8px;
   margin-right: 6px;
@@ -286,6 +544,11 @@ body {
   line-height: 1;
   padding: 6px 8px;
   cursor: pointer;
+}
+
+.CdgNode__error {
+  color: #b91c1c;
+  font-size: 12px;
 }
 
 .CdgNode__editor {
