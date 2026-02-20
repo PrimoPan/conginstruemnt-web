@@ -507,9 +507,12 @@ export function cdgToFlow(
         onNodePatch?: (nodeId: string, patch: Partial<CDGNode>) => void;
     }
 ): { nodes: Node<FlowNodeData>[]; edges: Edge[] } {
-    const safeNodes = (graph.nodes || []).filter(
-        (n): n is CDGNode => !!n && typeof n.id === "string" && !!n.id.trim()
-    );
+    const safeNodes = (graph.nodes || []).filter((n): n is CDGNode => {
+        if (!n || typeof n.id !== "string" || !n.id.trim()) return false;
+        // Hide low-importance rejected slots by default to keep the graph readable.
+        if (n.status === "rejected" && !n.locked && clamp01(n.importance, 0.3) <= 0.35) return false;
+        return true;
+    });
     const safeNodeIdSet = new Set(safeNodes.map((n) => n.id));
     const safeEdges = (graph.edges || []).filter(
         (e): e is CDGEdge =>

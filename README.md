@@ -84,6 +84,7 @@ REACT_APP_API_BASE_URL=http://localhost:3001
 - 节点卡片改为“纯展示”，编辑入口统一在右上 `Inspector`，避免编辑与拖拽冲突。
 - 节点支持整卡拖拽；拖拽释放到其他节点附近会自动重挂父子关系（防成环）。
 - 布局按 `destination(city)` 与 `duration_city(city)` 家族分组，同层目的地（如米兰/巴塞）并列展示。
+- `status=rejected` 且低重要度的旧槽位节点默认隐藏，减少历史噪声堆积。
 
 ---
 
@@ -220,7 +221,7 @@ conginstrument-web/
 | 文件 | 作用 |
 | --- | --- |
 | `src/core/type.ts` | 与后端对齐的类型定义（CDG、patch、turn、SSE data） |
-| `src/core/graphToFlow.tsx` | CDG -> React Flow 节点/边转换、层次布局、样式映射 |
+| `src/core/graphToFlow.tsx` | CDG -> React Flow 节点/边转换、层次布局、样式映射（含低重要度 rejected 节点隐藏） |
 | `src/core/graphSafe.ts` | 规范化后端返回的 graph 快照，防止首轮渲染因脏数据报错 |
 
 #### 8.7 `src/components/` 文件
