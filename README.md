@@ -60,6 +60,8 @@ npm run build
 - 生产同机部署（前端 `:6688` + 反向代理 `/api`）时，前端可不配地址，默认走同源，基本不需要跨域。
 - 本地实验多后端时，配置 `REACT_APP_API_BASE_URLS`。
 - 可通过 URL 查询参数临时切换：`?apiBase=https://your-backend`（会写入 `localStorage`，键名 `cg.apiBase`）。
+- 可通过 `?apiBase=auto` 清除本地缓存并恢复自动解析。
+- 前端会自动尝试 `当前页面主机:3001`，便于本地 `:3000` 和服务器 `:6688` 场景直接监听同主机后端 `:3001`。
 
 本地示例：
 
@@ -319,6 +321,8 @@ Optional env:
 - `REACT_APP_API_BASE_URL` (single backend base, default: same-origin)
 - `REACT_APP_API_BASE_URLS` (comma-separated backend list, optional)
 - Runtime override: `?apiBase=https://your-backend` (persisted in `localStorage` as `cg.apiBase`)
+- Reset runtime override: `?apiBase=auto` (clears cached base and re-enables auto resolution)
+- Auto resolution also tries `current host:3001` for local `:3000` and server `:6688` deployments.
 
 ---
 

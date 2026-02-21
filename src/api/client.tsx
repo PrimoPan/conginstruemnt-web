@@ -37,7 +37,13 @@ function readRuntimePreferredBase(): string {
     if (typeof window === "undefined") return "";
     try {
         const qs = new URLSearchParams(window.location.search);
-        const fromQuery = normalizeBase(qs.get("apiBase") || "");
+        const fromQueryRaw = String(qs.get("apiBase") || "").trim();
+        if (fromQueryRaw.toLowerCase() === "auto") {
+            window.localStorage.removeItem(API_BASE_STORAGE_KEY);
+            return "";
+        }
+
+        const fromQuery = normalizeBase(fromQueryRaw);
         if (fromQuery) {
             window.localStorage.setItem(API_BASE_STORAGE_KEY, fromQuery);
             return fromQuery;
@@ -48,10 +54,35 @@ function readRuntimePreferredBase(): string {
     }
 }
 
+function inferHostApiBase(): string {
+    if (typeof window === "undefined") return "";
+    try {
+        const { protocol, hostname } = window.location;
+        if (!protocol || !hostname) return "";
+        return normalizeBase(`${protocol}//${hostname}:3001`);
+    } catch {
+        return "";
+    }
+}
+
+function rememberWorkingBase(base: string, ok: boolean) {
+    if (!ok || typeof window === "undefined") return;
+    try {
+        const normalized = normalizeBase(base);
+        if (normalized) window.localStorage.setItem(API_BASE_STORAGE_KEY, normalized);
+        else window.localStorage.removeItem(API_BASE_STORAGE_KEY);
+    } catch {
+        // ignore storage errors
+    }
+}
+
 function resolveApiBases(): string[] {
     const envBases = parseEnvBases(ENV_BASES_RAW);
     const runtimeBase = readRuntimePreferredBase();
-    const bases = [runtimeBase, "", ...envBases].map(normalizeBase).filter((x, i, arr) => arr.indexOf(x) === i);
+    const inferredHostBase = inferHostApiBase();
+    const bases = [runtimeBase, inferredHostBase, ...envBases, ""]
+        .map(normalizeBase)
+        .filter((x, i, arr) => arr.indexOf(x) === i);
     return bases.length ? bases : [""];
 }
 
@@ -95,6 +126,7 @@ async function fetchWithBaseFallback(
                 lastErr = new Error(`HTTP ${res.status} from ${url}`);
                 continue;
             }
+            rememberWorkingBase(base, res.ok);
             return { res, base };
         } catch (err: any) {
             lastErr = err;
@@ -222,6 +254,7 @@ async function postTurnStream(params: {
                 lastErr = new Error(`HTTP ${attempt.status} from ${url}`);
                 continue;
             }
+            rememberWorkingBase(base, attempt.ok);
             res = attempt;
             break;
         } catch (err: any) {
