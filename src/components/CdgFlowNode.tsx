@@ -23,10 +23,14 @@ export const CdgFlowNode = memo(function CdgFlowNode({ data, selected }: NodePro
 
     const wrapperStyle: React.CSSProperties = {
         background: data?.toneBg,
-        borderColor: data?.toneBorder,
+        borderColor: data?.conceptActive ? "#d97706" : data?.conceptPaused ? "#9ca3af" : data?.toneBorder,
         boxShadow: selected
             ? "0 0 0 2px rgba(30, 64, 175, 0.18), 0 4px 16px rgba(0, 0, 0, 0.08)"
+            : data?.conceptActive
+                ? "0 0 0 2px rgba(245, 158, 11, 0.22), 0 10px 20px rgba(120, 53, 15, 0.14)"
             : data?.toneShadow,
+        opacity: data?.visualMuted ? 0.35 : 1,
+        transition: "opacity 140ms ease, border-color 140ms ease, box-shadow 140ms ease",
     };
 
     const title = data.fullLabel || "";
@@ -66,6 +70,8 @@ export const CdgFlowNode = memo(function CdgFlowNode({ data, selected }: NodePro
                 </div>
             </div>
             <div className="CdgNode__meta">{data.meta}</div>
+            {data?.conceptPaused ? <div className="CdgNode__chip CdgNode__chip--paused">已暂停</div> : null}
+            {data?.conceptActive ? <div className="CdgNode__chip CdgNode__chip--active">Concept 高亮</div> : null}
         </div>
     );
 });

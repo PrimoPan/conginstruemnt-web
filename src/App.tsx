@@ -1,15 +1,48 @@
 // src/App.tsx
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 
 import { api } from "./api/client";
-import type { CDG, NodeEvidenceFocus, TurnResponse, TurnStreamErrorData } from "./core/type";
+import type {
+  CDG,
+  ConceptItem,
+  ConceptMotif,
+  NodeEvidenceFocus,
+  TurnResponse,
+  TurnStreamErrorData,
+} from "./core/type";
 import { TopBar } from "./components/TopBar";
 import { ChatPanel, Msg } from "./components/ChatPanel";
 import { FlowPanel } from "./components/FlowPanel";
 import { normalizeGraphClient } from "./core/graphSafe";
+import { ConceptPanel } from "./components/ConceptPanel";
 
 const emptyGraph: CDG = { id: "", version: 0, nodes: [], edges: [] };
+
+function clamp01(v: any, fallback = 0.7) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(0, Math.min(1, n));
+}
+
+function compactText(input: any, max = 80) {
+  return String(input ?? "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, max);
+}
+
+function conceptDescFromNode(node: any, fallback: string) {
+  const parts = [
+    compactText(node?.type, 20),
+    compactText(node?.layer, 20),
+    compactText(node?.strength, 20),
+  ].filter(Boolean);
+  const c = Number(node?.confidence);
+  if (Number.isFinite(c)) parts.push(`c=${c.toFixed(2)}`);
+  const text = parts.join(" · ");
+  return compactText(text || fallback, 120);
+}
 
 function makeId(prefix = "m") {
   const uuid = (globalThis.crypto as any)?.randomUUID?.();
@@ -25,7 +58,13 @@ export default function App() {
 
   const [messages, setMessages] = useState<Msg[]>([]);
   const [graph, setGraph] = useState<CDG>(emptyGraph);
-  const [hoverFocus, setHoverFocus] = useState<NodeEvidenceFocus | null>(null);
+  const [draftGraphPreview, setDraftGraphPreview] = useState<CDG>(emptyGraph);
+  const [concepts, setConcepts] = useState<ConceptItem[]>([]);
+  const [motifs, setMotifs] = useState<ConceptMotif[]>([]);
+  const [conceptsDirty, setConceptsDirty] = useState(false);
+  const [activeConceptId, setActiveConceptId] = useState<string>("");
+  const [focusNodeId, setFocusNodeId] = useState<string>("");
+  const [nodeHoverFocus, setNodeHoverFocus] = useState<NodeEvidenceFocus | null>(null);
 
   const [busy, setBusy] = useState(false);
   const [savingGraph, setSavingGraph] = useState(false);
@@ -47,7 +86,14 @@ export default function App() {
     (async () => {
       try {
         const conv = await api.getConversation(token, cid);
-        setGraph(normalizeGraphClient(conv.graph));
+        const safeGraph = normalizeGraphClient(conv.graph);
+        setGraph(safeGraph);
+        setDraftGraphPreview(safeGraph);
+        setConcepts(Array.isArray(conv.concepts) ? conv.concepts : []);
+        setMotifs(Array.isArray(conv.motifs) ? conv.motifs : []);
+        setConceptsDirty(false);
+        setActiveConceptId("");
+        setFocusNodeId("");
 
         const turns = await api.getTurns(token, cid, 120);
         const ms: Msg[] = [];
@@ -88,7 +134,13 @@ export default function App() {
     abortRef.current = null;
     setMessages([]);
     setGraph(emptyGraph);
-    setHoverFocus(null);
+    setDraftGraphPreview(emptyGraph);
+    setConcepts([]);
+    setMotifs([]);
+    setConceptsDirty(false);
+    setActiveConceptId("");
+    setFocusNodeId("");
+    setNodeHoverFocus(null);
     setGraphGenerating(false);
 
     setBusy(true);
@@ -96,7 +148,12 @@ export default function App() {
       const r = await api.createConversation(token, "新对话");
       setCid(r.conversationId);
       localStorage.setItem("ci_cid", r.conversationId);
-      setGraph(normalizeGraphClient(r.graph));
+      const safeGraph = normalizeGraphClient(r.graph);
+      setGraph(safeGraph);
+      setDraftGraphPreview(safeGraph);
+      setConcepts(Array.isArray(r.concepts) ? r.concepts : []);
+      setMotifs(Array.isArray(r.motifs) ? r.motifs : []);
+      setConceptsDirty(false);
     } finally {
       setBusy(false);
     }
@@ -107,7 +164,7 @@ export default function App() {
 
     const userText = text.trim();
     if (!userText) return;
-    setHoverFocus(null);
+    setNodeHoverFocus(null);
 
     // 中断上一次
     abortRef.current?.abort();
@@ -151,7 +208,16 @@ export default function App() {
               )
           );
 
-          if (out?.graph) setGraph(normalizeGraphClient(out.graph));
+          if (out?.graph) {
+            const safeGraph = normalizeGraphClient(out.graph);
+            setGraph(safeGraph);
+            setDraftGraphPreview(safeGraph);
+          }
+          if (Array.isArray(out?.concepts)) {
+            setConcepts(out.concepts);
+            setConceptsDirty(false);
+          }
+          if (Array.isArray(out?.motifs)) setMotifs(out.motifs);
         },
 
         onError: (err: TurnStreamErrorData) => {
@@ -190,8 +256,17 @@ export default function App() {
     if (!token || !cid) return;
     setSavingGraph(true);
     try {
-      const out = await api.saveGraph(token, cid, nextGraph, opts);
-      if (out?.graph) setGraph(normalizeGraphClient(out.graph));
+      const out = await api.saveGraph(token, cid, nextGraph, concepts, motifs, opts);
+      if (out?.graph) {
+        const safeGraph = normalizeGraphClient(out.graph);
+        setGraph(safeGraph);
+        setDraftGraphPreview(safeGraph);
+      }
+      if (Array.isArray(out?.concepts)) {
+        setConcepts(out.concepts);
+      }
+      if (Array.isArray(out?.motifs)) setMotifs(out.motifs);
+      setConceptsDirty(false);
       if (out?.assistantText) {
         setMessages((prev) => [...prev, { id: makeId("ga"), role: "assistant", text: out.assistantText || "" }]);
       } else if (out?.adviceError) {
@@ -204,6 +279,51 @@ export default function App() {
       setSavingGraph(false);
     }
   }
+
+  function onPatchConcept(conceptId: string, patch: Partial<ConceptItem>) {
+    const next = (concepts || []).map((c) =>
+        c.id === conceptId ? { ...c, ...patch, updatedAt: new Date().toISOString() } : c
+    );
+    setConcepts(next);
+    setConceptsDirty(true);
+  }
+
+  function onEditConceptNode(conceptId: string) {
+    const c = (concepts || []).find((x) => x.id === conceptId);
+    const nodeId = c?.primaryNodeId || c?.nodeIds?.[0] || "";
+    if (!nodeId) return;
+    setActiveConceptId(conceptId);
+    setFocusNodeId(nodeId);
+  }
+
+  const conceptsView = useMemo(() => {
+    const sourceGraph = draftGraphPreview?.nodes?.length ? draftGraphPreview : graph;
+    const byId = new Map((sourceGraph.nodes || []).map((n) => [n.id, n]));
+    return (concepts || []).map((c) => {
+      const nodeId = c.primaryNodeId || c.nodeIds?.[0];
+      const node = nodeId ? byId.get(nodeId) : null;
+      if (!node) return c;
+      return {
+        ...c,
+        title: compactText(node.statement, 80) || c.title,
+        description: conceptDescFromNode(node, c.description),
+        score: clamp01(node.importance, c.score),
+      };
+    });
+  }, [concepts, draftGraphPreview, graph]);
+
+  const conceptFocus = useMemo<NodeEvidenceFocus | null>(() => {
+    if (!activeConceptId) return null;
+    const c = concepts.find((x) => x.id === activeConceptId);
+    if (!c) return null;
+    return {
+      nodeId: `concept:${c.id}`,
+      evidenceTerms: (c.evidenceTerms || []).slice(0, 8),
+      sourceMsgIds: c.sourceMsgIds || [],
+    };
+  }, [activeConceptId, concepts]);
+
+  const mergedFocus = nodeHoverFocus || conceptFocus;
 
   const disabled = !token || !cid;
 
@@ -227,17 +347,35 @@ export default function App() {
                 disabled={disabled}
                 busy={busy}
                 onSend={onSend}
-                evidenceFocus={hoverFocus}
+                evidenceFocus={mergedFocus}
+            />
+          </div>
+
+          <div className="Center">
+            <ConceptPanel
+                concepts={conceptsView}
+                activeConceptId={activeConceptId}
+                saving={savingGraph}
+                onSelect={setActiveConceptId}
+                onClearSelect={() => setActiveConceptId("")}
+                onEditConceptNode={onEditConceptNode}
+                onPatchConcept={onPatchConcept}
             />
           </div>
 
           <div className="Right">
             <FlowPanel
                 graph={graph}
+                concepts={concepts}
+                activeConceptId={activeConceptId}
                 generatingGraph={graphGenerating}
-                onNodeEvidenceHover={setHoverFocus}
+                onNodeEvidenceHover={setNodeHoverFocus}
                 onSaveGraph={onSaveGraph}
                 savingGraph={savingGraph}
+                extraDirty={conceptsDirty}
+                focusNodeId={focusNodeId}
+                onFocusNodeHandled={() => setFocusNodeId("")}
+                onDraftGraphChange={setDraftGraphPreview}
             />
           </div>
         </div>

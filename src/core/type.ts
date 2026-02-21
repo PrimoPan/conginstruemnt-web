@@ -105,6 +105,8 @@ export type ConversationDetail = {
     title: string;
     systemPrompt: string;
     graph: CDG;
+    concepts?: ConceptItem[];
+    motifs?: ConceptMotif[];
 };
 
 export type ConversationCreateResponse = ConversationDetail;
@@ -112,15 +114,27 @@ export type ConversationCreateResponse = ConversationDetail;
 export type GraphSaveResponse = {
     conversationId: string;
     graph: CDG;
+    concepts?: ConceptItem[];
+    motifs?: ConceptMotif[];
     updatedAt: string;
     assistantText?: string;
     adviceError?: string;
+};
+
+export type ConceptSaveResponse = {
+    conversationId: string;
+    graph: CDG;
+    concepts: ConceptItem[];
+    motifs?: ConceptMotif[];
+    updatedAt: string;
 };
 
 export type TurnResponse = {
     assistantText: string;
     graphPatch: GraphPatch;
     graph: CDG;
+    concepts?: ConceptItem[];
+    motifs?: ConceptMotif[];
 };
 
 export type TurnItem = {
@@ -178,6 +192,10 @@ export type FlowNodeData = {
     toneBadgeBorder?: string;
     toneHandle?: string;
     toneShadow?: string;
+    conceptIds?: string[];
+    conceptActive?: boolean;
+    conceptPaused?: boolean;
+    visualMuted?: boolean;
     onImportanceChange?: (nodeId: string, value: number) => void;
     onNodePatch?: (nodeId: string, patch: Partial<CDGNode>) => void;
 };
@@ -186,4 +204,64 @@ export type NodeEvidenceFocus = {
     nodeId: string;
     evidenceTerms: string[];
     sourceMsgIds?: string[];
+};
+
+export type ConceptKind =
+    | "intent"
+    | "requirement"
+    | "preference"
+    | "risk"
+    | "belief"
+    | "fact"
+    | "question"
+    | "other";
+
+export type ConceptFamily =
+    | "goal"
+    | "destination"
+    | "duration_total"
+    | "duration_city"
+    | "budget"
+    | "people"
+    | "lodging"
+    | "meeting_critical"
+    | "limiting_factor"
+    | "scenic_preference"
+    | "generic_constraint"
+    | "sub_location"
+    | "other";
+
+export type ConceptItem = {
+    id: string;
+    kind: ConceptKind;
+    family: ConceptFamily;
+    semanticKey: string;
+    title: string;
+    description: string;
+    score: number;
+    nodeIds: string[];
+    primaryNodeId?: string;
+    evidenceTerms: string[];
+    sourceMsgIds: string[];
+    motifIds?: string[];
+    locked: boolean;
+    paused: boolean;
+    updatedAt: string;
+};
+
+export type ConceptMotifType = "pair" | "triad";
+
+export type ConceptMotif = {
+    id: string;
+    templateKey: string;
+    motifType: ConceptMotifType;
+    relation: EdgeType;
+    conceptIds: string[];
+    anchorConceptId: string;
+    title: string;
+    description: string;
+    confidence: number;
+    supportEdgeIds: string[];
+    supportNodeIds: string[];
+    updatedAt: string;
 };

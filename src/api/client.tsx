@@ -1,5 +1,8 @@
 // src/api/client.ts
 import type {
+    ConceptItem,
+    ConceptMotif,
+    ConceptSaveResponse,
     LoginResponse,
     ConversationSummary,
     ConversationDetail,
@@ -347,6 +350,8 @@ export const api = {
         token: string,
         cid: string,
         graph: ConversationDetail["graph"],
+        concepts?: ConceptItem[],
+        motifs?: ConceptMotif[],
         opts?: { requestAdvice?: boolean; advicePrompt?: string }
     ) =>
         http<GraphSaveResponse>(
@@ -355,9 +360,21 @@ export const api = {
                 method: "PUT",
                 body: JSON.stringify({
                     graph,
+                    concepts: concepts || [],
+                    motifs: motifs || [],
                     requestAdvice: !!opts?.requestAdvice,
                     advicePrompt: opts?.advicePrompt || "",
                 }),
+            },
+            token
+        ),
+
+    saveConcepts: (token: string, cid: string, concepts: ConceptItem[]) =>
+        http<ConceptSaveResponse>(
+            `/api/conversations/${cid}/concepts`,
+            {
+                method: "PUT",
+                body: JSON.stringify({ concepts }),
             },
             token
         ),

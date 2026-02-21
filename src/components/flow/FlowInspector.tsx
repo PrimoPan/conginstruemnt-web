@@ -1,15 +1,6 @@
-import React, { useEffect, useState } from "react";
+import React from "react";
 import type { CDGEdge, CDGNode, EdgeType } from "../../core/type";
-import { normalize01, parseJsonValue, splitCsv } from "./graphDraftUtils";
-
-function toValueInput(v: unknown): string {
-    if (v == null) return "";
-    try {
-        return JSON.stringify(v, null, 2);
-    } catch {
-        return String(v);
-    }
-}
+import { normalize01 } from "./graphDraftUtils";
 
 export function FlowInspector(props: {
     node: CDGNode | null;
@@ -19,36 +10,6 @@ export function FlowInspector(props: {
     onDeleteNode: (nodeId: string) => void;
 }) {
     const { node, edge, onPatchNode, onPatchEdgeType, onDeleteNode } = props;
-    const [valueDraft, setValueDraft] = useState("");
-    const [valueErr, setValueErr] = useState("");
-    const [tagDraft, setTagDraft] = useState("");
-    const [evidenceDraft, setEvidenceDraft] = useState("");
-    const [sourceDraft, setSourceDraft] = useState("");
-
-    useEffect(() => {
-        setValueDraft(toValueInput(node?.value));
-        setTagDraft((node?.tags || []).join(", "));
-        setEvidenceDraft((node?.evidenceIds || []).join(", "));
-        setSourceDraft((node?.sourceMsgIds || []).join(", "));
-        setValueErr("");
-    }, [node?.id, node?.value, node?.tags, node?.evidenceIds, node?.sourceMsgIds]);
-
-    function applyValueDraft() {
-        if (!node) return;
-        const text = valueDraft.trim();
-        if (!text) {
-            setValueErr("");
-            onPatchNode(node.id, { value: undefined });
-            return;
-        }
-        try {
-            const parsed = parseJsonValue(text);
-            setValueErr("");
-            onPatchNode(node.id, { value: parsed });
-        } catch {
-            setValueErr("value 不是合法 JSON");
-        }
-    }
 
     if (!node && !edge) {
         return (
@@ -225,56 +186,6 @@ export function FlowInspector(props: {
                     onChange={(e) => onPatchNode(current.id, { confidence: Number(e.target.value) })}
                 />
             </label>
-
-            <label className="FlowInspector__fieldLabel">
-                key
-                <input
-                    className="FlowInspector__input"
-                    value={current.key || ""}
-                    onChange={(e) => onPatchNode(current.id, { key: e.target.value })}
-                />
-            </label>
-
-            <label className="FlowInspector__fieldLabel">
-                tags（逗号分隔）
-                <input
-                    className="FlowInspector__input"
-                    value={tagDraft}
-                    onChange={(e) => setTagDraft(e.target.value)}
-                    onBlur={() => onPatchNode(current.id, { tags: splitCsv(tagDraft) })}
-                />
-            </label>
-
-            <label className="FlowInspector__fieldLabel">
-                evidenceIds（逗号分隔）
-                <input
-                    className="FlowInspector__input"
-                    value={evidenceDraft}
-                    onChange={(e) => setEvidenceDraft(e.target.value)}
-                    onBlur={() => onPatchNode(current.id, { evidenceIds: splitCsv(evidenceDraft) })}
-                />
-            </label>
-
-            <label className="FlowInspector__fieldLabel">
-                sourceMsgIds（逗号分隔）
-                <input
-                    className="FlowInspector__input"
-                    value={sourceDraft}
-                    onChange={(e) => setSourceDraft(e.target.value)}
-                    onBlur={() => onPatchNode(current.id, { sourceMsgIds: splitCsv(sourceDraft) })}
-                />
-            </label>
-
-            <label className="FlowInspector__fieldLabel">
-                value(JSON)
-                <textarea
-                    className="FlowInspector__editor"
-                    value={valueDraft}
-                    onChange={(e) => setValueDraft(e.target.value)}
-                    onBlur={applyValueDraft}
-                />
-            </label>
-            {valueErr ? <div className="FlowInspector__error">{valueErr}</div> : null}
         </div>
     );
 }

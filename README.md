@@ -77,13 +77,18 @@ REACT_APP_API_BASE_URLS=http://127.0.0.1:3001,http://43.138.212.17:3001
 
 1. 顶栏：用户名输入、登录、新建对话、会话 ID 与图版本。
 2. 左侧：聊天区（独立滚动，输入区固定底部）。
-3. 右侧：流程图区（固定视口高度，不跟随聊天内容拉长）。
+3. 中间：Concept 区（筛选、锁定、暂停、编辑）。
+4. 右侧：流程图区（固定视口高度，不跟随聊天内容拉长）。
 
 交互要点：
 
 - 发送消息时走 SSE 接口，`token` 事件逐步刷新 assistant 文本。
 - `done` 到达后更新整张图。
 - 生成新图期间，右侧标题显示：`意图分析图生成中`。
+- 点击 Concept 卡片后，会高亮左侧相关证据词与右侧关联节点。
+- Concept 锁定/暂停先在前端本地生效，点击右上角“保存并生成建议”后再统一写回后端。
+- Concept 暂停会将右侧关联节点置灰（软删除视图，可恢复）。
+- Concept 是独立语义槽位对象，可关联多个节点（`1 concept -> N nodes`），并由 `primaryNodeId` 作为主展示锚点。
 - 鼠标 hover 流程图节点时，左侧聊天会高亮证据词（`evidenceIds`）。
 - 右上角“保存并生成建议”会把前端完整编辑图写回后端，并可选触发“基于新图”的建议生成。
 - 工具栏支持新增节点；删除时默认仅删除“当前节点”，并自动将其子节点重连到父节点（避免整棵子树被删）。
@@ -91,7 +96,7 @@ REACT_APP_API_BASE_URLS=http://127.0.0.1:3001,http://43.138.212.17:3001
 - 点击边后会出现“边类型”下拉，可改为 `enable/constraint/determine/conflicts_with`。
 - 拖拽节点并释放到另一个节点附近，会重挂为其子节点（默认新增 `enable` 边，且自动避免成环）。
 - 节点卡片改为“纯展示”，编辑入口统一在右上 `Inspector`，避免编辑与拖拽冲突。
-- 节点支持整卡拖拽；拖拽后坐标会写入节点 `value.ui.{x,y}`，并自动防抖同步到后端（`requestAdvice=false`），避免位置丢失。
+- 节点支持整卡拖拽；拖拽后坐标会写入节点 `value.ui.{x,y}`，并作为本地草稿保留，待用户点击“保存并生成建议”统一提交后端。
 - 布局按 `destination(city)` 与 `duration_city(city)` 家族分组，同层目的地（如米兰/巴塞）并列展示。
 - `status=rejected` 且低重要度的旧槽位节点默认隐藏，减少历史噪声堆积。
 
@@ -106,6 +111,7 @@ REACT_APP_API_BASE_URLS=http://127.0.0.1:3001,http://43.138.212.17:3001
 - `POST /api/conversations`
 - `GET /api/conversations/:id`
 - `PUT /api/conversations/:id/graph`（保存前端修改后的图，可选请求建议）
+- `PUT /api/conversations/:id/concepts`（保存中间 Concept 模块状态）
 - `GET /api/conversations/:id/turns`
 - `POST /api/conversations/:id/turn`
 - `POST /api/conversations/:id/turn/stream`（SSE）
@@ -128,12 +134,13 @@ SSE 事件：
 4. `core/graphToFlow.tsx`：把后端 CDG 映射成 React Flow 节点与边（分层布局、非法边过滤、meeting/language/generic constraint 槽位映射）。
 5. `core/graphSafe.ts`：前端入站 graph 快照容错归一化（首轮/异常数据兜底）。
 5. `components/ChatPanel.tsx`：聊天渲染 + 输入 + 证据高亮。
-6. `components/FlowPanel.tsx`：流程图主编排（草稿图状态、选中状态、增删保存、拖拽落位重挂）。
-7. `components/CdgFlowNode.tsx`：自定义节点卡片（纯展示）。
-8. `components/flow/FlowCanvas.tsx`：React Flow 画布层（渲染、hover、高亮回传）。
-9. `components/flow/FlowToolbar.tsx`：工具栏（新增、保存、状态）。
-10. `components/flow/FlowInspector.tsx`：右上编辑面板（节点/边参数、单节点删除与重连）。
-11. `components/flow/graphDraftUtils.ts`：草稿图辅助函数（ID、环检测、删除后重连、位置写回）。
+6. `components/ConceptPanel.tsx`：中间 Concept 模块（筛选、高亮、锁定/暂停、编辑）。
+7. `components/FlowPanel.tsx`：流程图主编排（草稿图状态、选中状态、增删保存、拖拽落位重挂）。
+8. `components/CdgFlowNode.tsx`：自定义节点卡片（纯展示）。
+9. `components/flow/FlowCanvas.tsx`：React Flow 画布层（渲染、hover、高亮回传）。
+10. `components/flow/FlowToolbar.tsx`：工具栏（新增、保存、状态）。
+11. `components/flow/FlowInspector.tsx`：右上编辑面板（节点/边参数、单节点删除与重连）。
+12. `components/flow/graphDraftUtils.ts`：草稿图辅助函数（ID、环检测、删除后重连、位置写回）。
 
 ---
 
@@ -239,6 +246,7 @@ conginstrument-web/
 | --- | --- |
 | `src/components/TopBar.tsx` | 顶栏：登录、新建会话、CID/version 展示 |
 | `src/components/ChatPanel.tsx` | 聊天窗口、输入发送、证据高亮与自动滚动 |
+| `src/components/ConceptPanel.tsx` | 中间 Concept 模块：筛选、高亮、锁定/暂停、编辑 |
 | `src/components/FlowPanel.tsx` | 图编辑主控：草稿状态、选中状态、拖拽落位、保存联动 |
 | `src/components/CdgFlowNode.tsx` | 自定义节点卡片（展示态） |
 | `src/components/flow/FlowCanvas.tsx` | React Flow 画布层与交互事件桥接 |
@@ -335,6 +343,7 @@ Used endpoints:
 - `POST /api/conversations`
 - `GET /api/conversations/:id`
 - `PUT /api/conversations/:id/graph` (supports `requestAdvice` + `advicePrompt`)
+- `PUT /api/conversations/:id/concepts` (save Concept panel states)
 - `GET /api/conversations/:id/turns`
 - `POST /api/conversations/:id/turn`
 - `POST /api/conversations/:id/turn/stream` (SSE)
@@ -351,6 +360,7 @@ SSE events consumed by frontend:
 src/App.tsx                 # app state orchestration
 src/components/TopBar.tsx   # top toolbar
 src/components/ChatPanel.tsx# chat UI + evidence highlighting
+src/components/ConceptPanel.tsx # middle concept module (highlight/lock/pause/edit)
 src/components/FlowPanel.tsx# flow panel + add/delete subtree + edge edit + save/advice trigger
 src/components/CdgFlowNode.tsx # custom editable node card (handle-only drag)
 src/core/type.ts            # shared protocol types

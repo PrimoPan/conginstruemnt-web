@@ -505,6 +505,9 @@ export function cdgToFlow(
         importanceOverrides?: Record<string, number>;
         onImportanceChange?: (nodeId: string, value: number) => void;
         onNodePatch?: (nodeId: string, patch: Partial<CDGNode>) => void;
+        activeNodeIds?: Set<string>;
+        pausedNodeIds?: Set<string>;
+        conceptIdsByNodeId?: Map<string, string[]>;
     }
 ): { nodes: Node<FlowNodeData>[]; edges: Edge[] } {
     const safeNodes = (graph.nodes || []).filter((n): n is CDGNode => {
@@ -528,6 +531,9 @@ export function cdgToFlow(
     const positions = computePositions(safeGraph);
     const nodeById = new Map(safeNodes.map((n) => [n.id, n]));
     const overrides = opts?.importanceOverrides || {};
+    const activeNodeIds = opts?.activeNodeIds || new Set<string>();
+    const pausedNodeIds = opts?.pausedNodeIds || new Set<string>();
+    const conceptIdsByNodeId = opts?.conceptIdsByNodeId || new Map<string, string[]>();
 
     const nodes: Node<FlowNodeData>[] = safeNodes.map((n) => {
         const statement = cleanStatement(n.statement || n.id);
@@ -536,6 +542,9 @@ export function cdgToFlow(
         const baseImportance = clamp01(n.importance, 0.68);
         const effectiveImportance = clamp01(overrides[n.id], baseImportance);
         const tone = paletteToTone(paletteForNode(n), n.severity, effectiveImportance);
+        const conceptActive = activeNodeIds.has(n.id);
+        const conceptPaused = pausedNodeIds.has(n.id);
+        const visualMuted = conceptPaused;
         return {
             id: n.id,
             type: "cdgNode",
@@ -565,6 +574,10 @@ export function cdgToFlow(
                 toneBadgeBorder: tone.badgeBorder,
                 toneHandle: tone.handle,
                 toneShadow: tone.shadow,
+                conceptIds: conceptIdsByNodeId.get(n.id) || [],
+                conceptActive,
+                conceptPaused,
+                visualMuted,
                 onImportanceChange: opts?.onImportanceChange,
                 onNodePatch: opts?.onNodePatch,
             },
@@ -579,6 +592,7 @@ export function cdgToFlow(
         const edgeImportance = Math.max(fromImportance, toImportance, 0.58);
         const stroke = edgeColor(e.type, edgeImportance);
         const showLabel = e.type === "constraint" || e.type === "conflicts_with";
+        const endpointPaused = pausedNodeIds.has(e.from) || pausedNodeIds.has(e.to);
         return {
             id: e.id,
             source: e.from,
@@ -589,7 +603,7 @@ export function cdgToFlow(
             style: {
                 strokeWidth: (e.type === "constraint" ? 1.95 : 1.35) + edgeImportance * 0.7,
                 stroke,
-                opacity: e.type === "determine" ? 0.74 : 0.92,
+                opacity: endpointPaused ? 0.2 : e.type === "determine" ? 0.74 : 0.92,
             },
             markerEnd: {
                 type: MarkerType.ArrowClosed,

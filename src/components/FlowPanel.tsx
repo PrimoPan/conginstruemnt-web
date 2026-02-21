@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "@xyflow/react/dist/style.css";
-import type { CDG, CDGNode, EdgeType, NodeEvidenceFocus } from "../core/type";
+import type { CDG, CDGNode, ConceptItem, EdgeType, NodeEvidenceFocus } from "../core/type";
 import { cdgToFlow } from "../core/graphToFlow";
 import { normalizeGraphClient } from "../core/graphSafe";
 import { CdgFlowNode } from "./CdgFlowNode";
@@ -65,6 +65,12 @@ function mergeIncomingGraphWithLocalUi(incoming: CDG, local: CDG): CDG {
 
 export function FlowPanel(props: {
     graph: CDG;
+    concepts?: ConceptItem[];
+    activeConceptId?: string;
+    extraDirty?: boolean;
+    focusNodeId?: string;
+    onFocusNodeHandled?: () => void;
+    onDraftGraphChange?: (graph: CDG) => void;
     generatingGraph?: boolean;
     onNodeEvidenceHover?: (focus: NodeEvidenceFocus | null) => void;
     onSaveGraph?: (
@@ -73,7 +79,19 @@ export function FlowPanel(props: {
     ) => Promise<void> | void;
     savingGraph?: boolean;
 }) {
-    const { graph, generatingGraph, onNodeEvidenceHover, onSaveGraph, savingGraph } = props;
+    const {
+        graph,
+        concepts,
+        activeConceptId,
+        extraDirty,
+        focusNodeId,
+        onFocusNodeHandled,
+        onDraftGraphChange,
+        generatingGraph,
+        onNodeEvidenceHover,
+        onSaveGraph,
+        savingGraph,
+    } = props;
     const [draftGraph, setDraftGraph] = useState<CDG>(normalizeGraphClient(graph));
     const [dirty, setDirty] = useState(false);
     const [selectedNodeId, setSelectedNodeId] = useState<string>("");
@@ -81,17 +99,40 @@ export function FlowPanel(props: {
     const [saveError, setSaveError] = useState("");
     const dragStartRef = useRef<Record<string, { x: number; y: number }>>({});
     const draftGraphRef = useRef<CDG>(normalizeGraphClient(graph));
-    const draftRevisionRef = useRef(0);
-    const autoPersistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const { nodes, edges, setNodes, setEdges, onNodesChange, onEdgesChange } = useFlowState();
+
+    const conceptIdsByNodeId = useMemo(() => {
+        const m = new Map<string, string[]>();
+        for (const c of concepts || []) {
+            for (const nid of c.nodeIds || []) {
+                if (!m.has(nid)) m.set(nid, []);
+                m.get(nid)!.push(c.id);
+            }
+        }
+        return m;
+    }, [concepts]);
+
+    const activeNodeIds = useMemo(() => {
+        if (!activeConceptId) return new Set<string>();
+        const c = (concepts || []).find((x) => x.id === activeConceptId);
+        return new Set(c?.nodeIds || []);
+    }, [activeConceptId, concepts]);
+
+    const pausedNodeIds = useMemo(() => {
+        const s = new Set<string>();
+        for (const c of concepts || []) {
+            if (!c.paused) continue;
+            for (const nid of c.nodeIds || []) s.add(nid);
+        }
+        return s;
+    }, [concepts]);
 
     useEffect(() => {
         const normalized = normalizeGraphClient(graph);
         const merged = mergeIncomingGraphWithLocalUi(normalized, draftGraphRef.current);
         setDraftGraph(merged);
         draftGraphRef.current = merged;
-        draftRevisionRef.current = 0;
         setDirty(false);
         setSelectedNodeId("");
         setSelectedEdgeId("");
@@ -103,41 +144,26 @@ export function FlowPanel(props: {
     }, [draftGraph]);
 
     useEffect(() => {
-        return () => {
-            if (autoPersistTimerRef.current) {
-                clearTimeout(autoPersistTimerRef.current);
-                autoPersistTimerRef.current = null;
-            }
-        };
-    }, []);
+        onDraftGraphChange?.(draftGraph);
+    }, [draftGraph, onDraftGraphChange]);
+
+    useEffect(() => {
+        if (!focusNodeId) return;
+        const exists = (draftGraph.nodes || []).some((n) => n.id === focusNodeId);
+        if (!exists) return;
+        setSelectedNodeId(focusNodeId);
+        setSelectedEdgeId("");
+        onFocusNodeHandled?.();
+    }, [focusNodeId, draftGraph.nodes, onFocusNodeHandled]);
 
     const updateDraftGraph = useCallback((updater: (prev: CDG) => CDG) => {
         setDraftGraph((prev) => {
             const next = updater(prev);
             draftGraphRef.current = next;
-            draftRevisionRef.current += 1;
             return next;
         });
         setDirty(true);
     }, []);
-
-    const scheduleAutoPersist = useCallback(
-        (nextGraph: CDG, revision: number) => {
-            if (!onSaveGraph) return;
-            if (autoPersistTimerRef.current) clearTimeout(autoPersistTimerRef.current);
-            autoPersistTimerRef.current = setTimeout(async () => {
-                try {
-                    await Promise.resolve(onSaveGraph(nextGraph, { requestAdvice: false }));
-                    if (draftRevisionRef.current === revision) {
-                        setDirty(false);
-                    }
-                } catch {
-                    // Keep dirty=true and let user manually retry save.
-                }
-            }, 700);
-        },
-        [onSaveGraph]
-    );
 
     const onNodePatch = useCallback(
         (nodeId: string, patch: Partial<CDGNode>) => {
@@ -171,10 +197,16 @@ export function FlowPanel(props: {
     );
 
     useEffect(() => {
-        const flow = cdgToFlow(draftGraph, { onNodePatch, onImportanceChange });
+        const flow = cdgToFlow(draftGraph, {
+            onNodePatch,
+            onImportanceChange,
+            activeNodeIds,
+            pausedNodeIds,
+            conceptIdsByNodeId,
+        });
         setNodes(flow.nodes);
         setEdges(flow.edges);
-    }, [draftGraph, onImportanceChange, onNodePatch, setEdges, setNodes]);
+    }, [draftGraph, onImportanceChange, onNodePatch, setEdges, setNodes, activeNodeIds, pausedNodeIds, conceptIdsByNodeId]);
 
     const selectedNode = useMemo(
         () => (draftGraph.nodes || []).find((n) => n.id === selectedNodeId) || null,
@@ -282,18 +314,17 @@ export function FlowPanel(props: {
                 nextGraph = { ...prev, nodes: nextNodes, edges: incomingRemoved };
             }
 
-            const nextRevision = draftRevisionRef.current + 1;
-            draftRevisionRef.current = nextRevision;
             draftGraphRef.current = nextGraph;
             setDraftGraph(nextGraph);
             setDirty(true);
-            scheduleAutoPersist(nextGraph, nextRevision);
         },
-        [nodes, scheduleAutoPersist]
+        [nodes]
     );
 
+    const hasUnsavedChanges = dirty || !!extraDirty;
+
     const saveGraph = useCallback(async () => {
-        if (!onSaveGraph || savingGraph || !dirty) return;
+        if (!onSaveGraph || savingGraph || !hasUnsavedChanges) return;
         setSaveError("");
         try {
             await Promise.resolve(
@@ -307,7 +338,7 @@ export function FlowPanel(props: {
         } catch (e: any) {
             setSaveError(e?.message || "保存失败");
         }
-    }, [dirty, draftGraph, onSaveGraph, savingGraph]);
+    }, [draftGraph, hasUnsavedChanges, onSaveGraph, savingGraph]);
 
     return (
         <div className="Panel">
@@ -318,9 +349,9 @@ export function FlowPanel(props: {
                 <FlowToolbar
                     onAddNode={addNode}
                     onSave={saveGraph}
-                    canSave={!!onSaveGraph && dirty}
+                    canSave={!!onSaveGraph && hasUnsavedChanges}
                     saving={!!savingGraph}
-                    dirty={dirty}
+                    dirty={hasUnsavedChanges}
                     generating={!!generatingGraph}
                 />
 
