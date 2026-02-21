@@ -16,9 +16,9 @@ export function FlowInspector(props: {
     edge: CDGEdge | null;
     onPatchNode: (nodeId: string, patch: Partial<CDGNode>) => void;
     onPatchEdgeType: (edgeId: string, edgeType: EdgeType) => void;
-    onDeleteNodeSubtree: (nodeId: string) => void;
+    onDeleteNode: (nodeId: string) => void;
 }) {
-    const { node, edge, onPatchNode, onPatchEdgeType, onDeleteNodeSubtree } = props;
+    const { node, edge, onPatchNode, onPatchEdgeType, onDeleteNode } = props;
     const [valueDraft, setValueDraft] = useState("");
     const [valueErr, setValueErr] = useState("");
     const [tagDraft, setTagDraft] = useState("");
@@ -95,10 +95,10 @@ export function FlowInspector(props: {
                 <button
                     type="button"
                     className="Btn FlowToolbar__btn FlowToolbar__btnDanger"
-                    onClick={() => onDeleteNodeSubtree(current.id)}
-                    title="删除该节点及其子树"
+                    onClick={() => onDeleteNode(current.id)}
+                    title="删除该节点并重连上下游"
                 >
-                    删除节点及子树
+                    删除当前节点
                 </button>
             </div>
 

@@ -9,7 +9,7 @@ import { FlowInspector } from "./flow/FlowInspector";
 import { FlowToolbar } from "./flow/FlowToolbar";
 import {
     EDITABLE_PARENT_EDGE_TYPES,
-    collectSubtree,
+    deleteNodeAndReconnect,
     ensureNodeUi,
     findDropParent,
     hasPath,
@@ -21,6 +21,47 @@ import {
 } from "./flow/graphDraftUtils";
 
 const nodeTypes = { cdgNode: CdgFlowNode };
+
+function readUiPosition(node: CDGNode | null | undefined): { x: number; y: number } | null {
+    const raw = (node as any)?.value?.ui;
+    const x = Number(raw?.x);
+    const y = Number(raw?.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    return { x: Math.round(x), y: Math.round(y) };
+}
+
+function mergeIncomingGraphWithLocalUi(incoming: CDG, local: CDG): CDG {
+    const uiById = new Map<string, { x: number; y: number }>();
+    for (const n of local.nodes || []) {
+        const pos = readUiPosition(n);
+        if (pos) uiById.set(n.id, pos);
+    }
+    if (!uiById.size) return incoming;
+
+    let changed = false;
+    const nodes = (incoming.nodes || []).map((n) => {
+        if (readUiPosition(n)) return n;
+        const pos = uiById.get(n.id);
+        if (!pos) return n;
+        changed = true;
+        const baseValue =
+            n.value && typeof n.value === "object" && !Array.isArray(n.value)
+                ? (n.value as Record<string, any>)
+                : {};
+        return {
+            ...n,
+            value: {
+                ...baseValue,
+                ui: pos,
+            },
+        };
+    });
+    if (!changed) return incoming;
+    return {
+        ...incoming,
+        nodes,
+    };
+}
 
 export function FlowPanel(props: {
     graph: CDG;
@@ -39,22 +80,64 @@ export function FlowPanel(props: {
     const [selectedEdgeId, setSelectedEdgeId] = useState<string>("");
     const [saveError, setSaveError] = useState("");
     const dragStartRef = useRef<Record<string, { x: number; y: number }>>({});
-    const dragAllowedRef = useRef<Record<string, boolean>>({});
+    const draftGraphRef = useRef<CDG>(normalizeGraphClient(graph));
+    const draftRevisionRef = useRef(0);
+    const autoPersistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const { nodes, edges, setNodes, setEdges, onNodesChange, onEdgesChange } = useFlowState();
 
     useEffect(() => {
-        setDraftGraph(normalizeGraphClient(graph));
+        const normalized = normalizeGraphClient(graph);
+        const merged = mergeIncomingGraphWithLocalUi(normalized, draftGraphRef.current);
+        setDraftGraph(merged);
+        draftGraphRef.current = merged;
+        draftRevisionRef.current = 0;
         setDirty(false);
         setSelectedNodeId("");
         setSelectedEdgeId("");
         setSaveError("");
     }, [graph]);
 
+    useEffect(() => {
+        draftGraphRef.current = draftGraph;
+    }, [draftGraph]);
+
+    useEffect(() => {
+        return () => {
+            if (autoPersistTimerRef.current) {
+                clearTimeout(autoPersistTimerRef.current);
+                autoPersistTimerRef.current = null;
+            }
+        };
+    }, []);
+
     const updateDraftGraph = useCallback((updater: (prev: CDG) => CDG) => {
-        setDraftGraph((prev) => updater(prev));
+        setDraftGraph((prev) => {
+            const next = updater(prev);
+            draftGraphRef.current = next;
+            draftRevisionRef.current += 1;
+            return next;
+        });
         setDirty(true);
     }, []);
+
+    const scheduleAutoPersist = useCallback(
+        (nextGraph: CDG, revision: number) => {
+            if (!onSaveGraph) return;
+            if (autoPersistTimerRef.current) clearTimeout(autoPersistTimerRef.current);
+            autoPersistTimerRef.current = setTimeout(async () => {
+                try {
+                    await Promise.resolve(onSaveGraph(nextGraph, { requestAdvice: false }));
+                    if (draftRevisionRef.current === revision) {
+                        setDirty(false);
+                    }
+                } catch {
+                    // Keep dirty=true and let user manually retry save.
+                }
+            }, 700);
+        },
+        [onSaveGraph]
+    );
 
     const onNodePatch = useCallback(
         (nodeId: string, patch: Partial<CDGNode>) => {
@@ -112,16 +195,11 @@ export function FlowPanel(props: {
         [updateDraftGraph]
     );
 
-    const deleteNodeSubtree = useCallback(
+    const deleteNode = useCallback(
         (nodeId: string) => {
             if (!nodeId) return;
             updateDraftGraph((prev) => {
-                const dropIds = collectSubtree(nodeId, prev.edges || []);
-                return {
-                    ...prev,
-                    nodes: (prev.nodes || []).filter((n) => !dropIds.has(n.id)),
-                    edges: (prev.edges || []).filter((e) => !dropIds.has(e.from) && !dropIds.has(e.to)),
-                };
+                return deleteNodeAndReconnect(prev, nodeId);
             });
             setSelectedNodeId("");
             setSelectedEdgeId("");
@@ -167,60 +245,51 @@ export function FlowPanel(props: {
 
     const onNodeDragStart = useCallback((evt: any, node: any) => {
         dragStartRef.current[node.id] = { x: node.position.x, y: node.position.y };
-        const target = evt?.target as HTMLElement | null;
-        dragAllowedRef.current[node.id] = !!target?.closest?.(".CdgNode__dragHandle");
     }, []);
 
     const onNodeDragStop = useCallback(
         (_: any, dragged: any) => {
             const start = dragStartRef.current[dragged.id];
             delete dragStartRef.current[dragged.id];
-            const dragAllowed = dragAllowedRef.current[dragged.id] !== false;
-            delete dragAllowedRef.current[dragged.id];
-            if (!dragAllowed && start) {
-                updateDraftGraph((prev) => ({
-                    ...prev,
-                    nodes: (prev.nodes || []).map((n) =>
-                        n.id === dragged.id ? ensureNodeUi(n, start.x, start.y) : n
-                    ),
-                }));
-                return;
-            }
             const moveDist = start
                 ? Math.hypot(dragged.position.x - start.x, dragged.position.y - start.y)
                 : 999;
             if (moveDist < 6) return;
 
             const droppedParentId = moveDist > 24 ? findDropParent(dragged, nodes) : null;
-            updateDraftGraph((prev) => {
-                const nextNodes = (prev.nodes || []).map((n) =>
+            const prev = draftGraphRef.current;
+            const nextNodes = (prev.nodes || []).map((n) =>
                     n.id === dragged.id ? ensureNodeUi(n, dragged.position.x, dragged.position.y) : n
                 );
 
-                if (!droppedParentId || droppedParentId === dragged.id) {
-                    return { ...prev, nodes: nextNodes };
-                }
-
+            let nextGraph: CDG = { ...prev, nodes: nextNodes };
+            if (droppedParentId && droppedParentId !== dragged.id) {
                 const incomingRemoved = (prev.edges || []).filter(
                     (e) => !(e.to === dragged.id && EDITABLE_PARENT_EDGE_TYPES.includes(e.type))
                 );
                 const already = incomingRemoved.some((e) => e.from === droppedParentId && e.to === dragged.id);
                 if (!already) {
-                    if (hasPath(dragged.id, droppedParentId, incomingRemoved)) {
-                        return { ...prev, nodes: nextNodes };
+                    if (!hasPath(dragged.id, droppedParentId, incomingRemoved)) {
+                        incomingRemoved.push({
+                            id: newEdgeId(),
+                            from: droppedParentId,
+                            to: dragged.id,
+                            type: "enable",
+                            confidence: 0.86,
+                        });
                     }
-                    incomingRemoved.push({
-                        id: newEdgeId(),
-                        from: droppedParentId,
-                        to: dragged.id,
-                        type: "enable",
-                        confidence: 0.86,
-                    });
                 }
-                return { ...prev, nodes: nextNodes, edges: incomingRemoved };
-            });
+                nextGraph = { ...prev, nodes: nextNodes, edges: incomingRemoved };
+            }
+
+            const nextRevision = draftRevisionRef.current + 1;
+            draftRevisionRef.current = nextRevision;
+            draftGraphRef.current = nextGraph;
+            setDraftGraph(nextGraph);
+            setDirty(true);
+            scheduleAutoPersist(nextGraph, nextRevision);
         },
-        [nodes, updateDraftGraph]
+        [nodes, scheduleAutoPersist]
     );
 
     const saveGraph = useCallback(async () => {
@@ -260,7 +329,7 @@ export function FlowPanel(props: {
                     edge={selectedEdge}
                     onPatchNode={onNodePatch}
                     onPatchEdgeType={patchEdgeType}
-                    onDeleteNodeSubtree={deleteNodeSubtree}
+                    onDeleteNode={deleteNode}
                 />
 
                 <FlowCanvas

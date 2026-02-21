@@ -112,6 +112,60 @@ export function collectSubtree(startId: string, edges: CDGEdge[]): Set<string> {
     return out;
 }
 
+function edgeSig(from: string, to: string, type: EdgeType) {
+    return `${from}|${to}|${type}`;
+}
+
+function clampEdgeConfidence(x: any, fallback = 0.72) {
+    const n = Number(x);
+    if (!Number.isFinite(n)) return fallback;
+    return Math.max(0, Math.min(1, n));
+}
+
+export function deleteNodeAndReconnect(graph: CDG, nodeId: string): CDG {
+    const nodes = (graph.nodes || []).filter((n) => n.id !== nodeId);
+    const edges = graph.edges || [];
+
+    const incoming = edges.filter((e) => e.to === nodeId);
+    const outgoing = edges.filter((e) => e.from === nodeId);
+    const remained = edges.filter((e) => e.to !== nodeId && e.from !== nodeId);
+
+    const bridgeParents = incoming.filter((e) => EDITABLE_PARENT_EDGE_TYPES.includes(e.type));
+    const bridgeChildren = outgoing.filter((e) => EDITABLE_PARENT_EDGE_TYPES.includes(e.type));
+
+    const existing = new Set(remained.map((e) => edgeSig(e.from, e.to, e.type)));
+    const nextEdges = [...remained];
+
+    // Delete-only behavior: reconnect parent -> child for structural edges.
+    for (const p of bridgeParents) {
+        for (const c of bridgeChildren) {
+            if (!p.from || !c.to || p.from === c.to) continue;
+            const type = c.type;
+            const sig = edgeSig(p.from, c.to, type);
+            if (existing.has(sig)) continue;
+            if (hasPath(c.to, p.from, nextEdges)) continue;
+
+            existing.add(sig);
+            nextEdges.push({
+                id: newEdgeId(),
+                from: p.from,
+                to: c.to,
+                type,
+                confidence: clampEdgeConfidence(
+                    ((Number(p.confidence) || 0.72) + (Number(c.confidence) || 0.72)) / 2,
+                    0.74
+                ),
+            });
+        }
+    }
+
+    return {
+        ...graph,
+        nodes,
+        edges: nextEdges,
+    };
+}
+
 export function findDropParent(
     dragged: Node<FlowNodeData>,
     nodes: Node<FlowNodeData>[]

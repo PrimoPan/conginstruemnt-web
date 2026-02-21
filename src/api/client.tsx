@@ -12,19 +12,103 @@ import type {
     TurnStreamErrorData,
 } from "../core/type";
 
-const BASE =
-    process.env.REACT_APP_API_BASE_URL?.replace(/\/$/, "") || "http://43.138.212.17:3001";
+const API_BASE_STORAGE_KEY = "cg.apiBase";
+const ENV_BASES_RAW =
+    process.env.REACT_APP_API_BASE_URLS || process.env.REACT_APP_API_BASE_URL || "";
 
-/** --------- 普通 JSON 请求 --------- */
-async function http<T>(path: string, opts: RequestInit = {}, token?: string): Promise<T> {
+function normalizeBase(base: string): string {
+    const trimmed = String(base || "").trim();
+    if (!trimmed || trimmed === "/") return "";
+    return trimmed.replace(/\/+$/, "");
+}
+
+function parseEnvBases(raw: string): string[] {
+    return Array.from(
+        new Set(
+            String(raw || "")
+                .split(",")
+                .map((x) => normalizeBase(x))
+                .filter(Boolean)
+        )
+    );
+}
+
+function readRuntimePreferredBase(): string {
+    if (typeof window === "undefined") return "";
+    try {
+        const qs = new URLSearchParams(window.location.search);
+        const fromQuery = normalizeBase(qs.get("apiBase") || "");
+        if (fromQuery) {
+            window.localStorage.setItem(API_BASE_STORAGE_KEY, fromQuery);
+            return fromQuery;
+        }
+        return normalizeBase(window.localStorage.getItem(API_BASE_STORAGE_KEY) || "");
+    } catch {
+        return "";
+    }
+}
+
+function resolveApiBases(): string[] {
+    const envBases = parseEnvBases(ENV_BASES_RAW);
+    const runtimeBase = readRuntimePreferredBase();
+    const bases = [runtimeBase, "", ...envBases].map(normalizeBase).filter((x, i, arr) => arr.indexOf(x) === i);
+    return bases.length ? bases : [""];
+}
+
+function buildUrl(base: string, path: string) {
+    if (!path.startsWith("/")) path = `/${path}`;
+    return `${base}${path}`;
+}
+
+function makeRetriableStatusSet() {
+    return new Set([404, 408, 425, 429, 500, 502, 503, 504]);
+}
+const RETRIABLE_STATUS = makeRetriableStatusSet();
+
+function withAuthHeaders(opts: RequestInit = {}, token?: string): HeadersInit {
     const headers: Record<string, string> = {
         "Content-Type": "application/json",
         ...(opts.headers as any),
     };
-
     if (token) headers.Authorization = `Bearer ${token}`;
+    return headers;
+}
 
-    const res = await fetch(`${BASE}${path}`, { ...opts, headers });
+function isNetworkLikeError(err: unknown) {
+    const msg = String((err as any)?.message || err || "");
+    return /failed to fetch|networkerror|load failed|fetch failed|network request failed/i.test(msg);
+}
+
+async function fetchWithBaseFallback(
+    path: string,
+    opts: RequestInit = {},
+    token?: string
+): Promise<{ res: Response; base: string }> {
+    const bases = resolveApiBases();
+    let lastErr: any = null;
+    for (let i = 0; i < bases.length; i += 1) {
+        const base = bases[i];
+        const url = buildUrl(base, path);
+        try {
+            const res = await fetch(url, { ...opts, headers: withAuthHeaders(opts, token) });
+            if (!res.ok && RETRIABLE_STATUS.has(res.status) && i < bases.length - 1) {
+                lastErr = new Error(`HTTP ${res.status} from ${url}`);
+                continue;
+            }
+            return { res, base };
+        } catch (err: any) {
+            lastErr = err;
+            if (!isNetworkLikeError(err) || i >= bases.length - 1) {
+                throw err;
+            }
+        }
+    }
+    throw lastErr || new Error("request failed");
+}
+
+/** --------- 普通 JSON 请求 --------- */
+async function http<T>(path: string, opts: RequestInit = {}, token?: string): Promise<T> {
+    const { res } = await fetchWithBaseFallback(path, opts, token);
 
     if (!res.ok) {
         const text = await res.text().catch(() => "");
@@ -117,17 +201,35 @@ async function postTurnStream(params: {
     handlers: TurnStreamHandlers;
 }) {
     const { token, cid, userText, handlers } = params;
-
-    const res = await fetch(`${BASE}/api/conversations/${cid}/turn/stream`, {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-            Accept: "text/event-stream",
-            Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ userText }),
-        signal: handlers.signal,
-    });
+    const bases = resolveApiBases();
+    let res: Response | null = null;
+    let lastErr: any = null;
+    for (let i = 0; i < bases.length; i += 1) {
+        const base = bases[i];
+        const url = buildUrl(base, `/api/conversations/${cid}/turn/stream`);
+        try {
+            const attempt = await fetch(url, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Accept: "text/event-stream",
+                    Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify({ userText }),
+                signal: handlers.signal,
+            });
+            if (!attempt.ok && RETRIABLE_STATUS.has(attempt.status) && i < bases.length - 1) {
+                lastErr = new Error(`HTTP ${attempt.status} from ${url}`);
+                continue;
+            }
+            res = attempt;
+            break;
+        } catch (err: any) {
+            lastErr = err;
+            if (!isNetworkLikeError(err) || i >= bases.length - 1) throw err;
+        }
+    }
+    if (!res) throw lastErr || new Error("SSE stream failed");
 
     if (!res.ok) {
         const text = await res.text().catch(() => "");

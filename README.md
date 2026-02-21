@@ -52,12 +52,19 @@ npm run build
 
 | 变量 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| `REACT_APP_API_BASE_URL` | 否 | `http://43.138.212.17:3001` | 后端 API 基地址 |
+| `REACT_APP_API_BASE_URL` | 否 | 空（同源） | 单一后端地址，兼容旧配置 |
+| `REACT_APP_API_BASE_URLS` | 否 | 空 | 多后端地址（逗号分隔），例如 `http://127.0.0.1:3001,https://api.example.com` |
 
-建议本地调试时设置为你的后端地址，例如：
+建议：
+
+- 生产同机部署（前端 `:6688` + 反向代理 `/api`）时，前端可不配地址，默认走同源，基本不需要跨域。
+- 本地实验多后端时，配置 `REACT_APP_API_BASE_URLS`。
+- 可通过 URL 查询参数临时切换：`?apiBase=https://your-backend`（会写入 `localStorage`，键名 `cg.apiBase`）。
+
+本地示例：
 
 ```bash
-REACT_APP_API_BASE_URL=http://localhost:3001
+REACT_APP_API_BASE_URLS=http://127.0.0.1:3001,http://43.138.212.17:3001
 ```
 
 ---
@@ -77,12 +84,12 @@ REACT_APP_API_BASE_URL=http://localhost:3001
 - 生成新图期间，右侧标题显示：`意图分析图生成中`。
 - 鼠标 hover 流程图节点时，左侧聊天会高亮证据词（`evidenceIds`）。
 - 右上角“保存并生成建议”会把前端完整编辑图写回后端，并可选触发“基于新图”的建议生成。
-- 工具栏支持新增节点；删除时会删除“当前节点 + 可达子树（沿 outgoing 边）”。
+- 工具栏支持新增节点；删除时默认仅删除“当前节点”，并自动将其子节点重连到父节点（避免整棵子树被删）。
 - 点击节点后在右上 `Inspector` 编辑主要参数：`statement/type/layer/status/strength/severity/confidence/importance/tags/evidenceIds/sourceMsgIds/key/value`。
 - 点击边后会出现“边类型”下拉，可改为 `enable/constraint/determine/conflicts_with`。
 - 拖拽节点并释放到另一个节点附近，会重挂为其子节点（默认新增 `enable` 边，且自动避免成环）。
 - 节点卡片改为“纯展示”，编辑入口统一在右上 `Inspector`，避免编辑与拖拽冲突。
-- 节点支持整卡拖拽；拖拽释放到其他节点附近会自动重挂父子关系（防成环）。
+- 节点支持整卡拖拽；拖拽后坐标会写入节点 `value.ui.{x,y}`，并自动防抖同步到后端（`requestAdvice=false`），避免位置丢失。
 - 布局按 `destination(city)` 与 `duration_city(city)` 家族分组，同层目的地（如米兰/巴塞）并列展示。
 - `status=rejected` 且低重要度的旧槽位节点默认隐藏，减少历史噪声堆积。
 
@@ -123,8 +130,8 @@ SSE 事件：
 7. `components/CdgFlowNode.tsx`：自定义节点卡片（纯展示）。
 8. `components/flow/FlowCanvas.tsx`：React Flow 画布层（渲染、hover、高亮回传）。
 9. `components/flow/FlowToolbar.tsx`：工具栏（新增、保存、状态）。
-10. `components/flow/FlowInspector.tsx`：右上编辑面板（节点/边参数、删除子树）。
-11. `components/flow/graphDraftUtils.ts`：草稿图辅助函数（ID、环检测、子树删除等）。
+10. `components/flow/FlowInspector.tsx`：右上编辑面板（节点/边参数、单节点删除与重连）。
+11. `components/flow/graphDraftUtils.ts`：草稿图辅助函数（ID、环检测、删除后重连、位置写回）。
 
 ---
 
@@ -234,8 +241,8 @@ conginstrument-web/
 | `src/components/CdgFlowNode.tsx` | 自定义节点卡片（展示态） |
 | `src/components/flow/FlowCanvas.tsx` | React Flow 画布层与交互事件桥接 |
 | `src/components/flow/FlowToolbar.tsx` | 新增节点、保存、脏状态与生成状态展示 |
-| `src/components/flow/FlowInspector.tsx` | 右上编辑面板，支持删“选中节点及子树” |
-| `src/components/flow/graphDraftUtils.ts` | 图编辑工具函数（防环、子树收集、位置写回） |
+| `src/components/flow/FlowInspector.tsx` | 右上编辑面板，支持删“当前节点并重连上下游” |
+| `src/components/flow/graphDraftUtils.ts` | 图编辑工具函数（防环、删除后重连、位置写回） |
 
 ---
 
@@ -309,7 +316,9 @@ npm run build
 
 Optional env:
 
-- `REACT_APP_API_BASE_URL` (default: `http://43.138.212.17:3001`)
+- `REACT_APP_API_BASE_URL` (single backend base, default: same-origin)
+- `REACT_APP_API_BASE_URLS` (comma-separated backend list, optional)
+- Runtime override: `?apiBase=https://your-backend` (persisted in `localStorage` as `cg.apiBase`)
 
 ---
 
