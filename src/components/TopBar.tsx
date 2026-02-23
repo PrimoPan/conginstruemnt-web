@@ -5,10 +5,13 @@ export function TopBar(props: {
     setUsername: (s: string) => void;
     onLogin: () => void;
     onNewConversation: () => void;
+    onExportPlan: () => void;
     loggedIn: boolean;
     cid: string;
     graphVersion: number;
     busy: boolean;
+    exportingPlan: boolean;
+    exportPlanDisabled: boolean;
 }) {
     return (
         <div className="TopBar">
@@ -33,6 +36,14 @@ export function TopBar(props: {
                     disabled={!props.loggedIn || props.busy}
                 >
                     新建对话
+                </button>
+                <button
+                    className="Btn"
+                    onClick={props.onExportPlan}
+                    disabled={props.exportPlanDisabled || props.exportingPlan || props.busy}
+                    title={props.exportPlanDisabled ? "请先开始对话后再导出" : "导出当前旅行计划 PDF"}
+                >
+                    {props.exportingPlan ? "导出中..." : "导出旅行计划PDF"}
                 </button>
 
                 <div className="Meta">

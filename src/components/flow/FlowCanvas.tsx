@@ -73,7 +73,7 @@ export function FlowCanvas(props: {
             nodesConnectable={false}
             nodesDraggable
             elementsSelectable
-            panOnDrag={[1, 2]}
+            panOnDrag
             selectionOnDrag={false}
             nodeDragThreshold={12}
             proOptions={{ hideAttribution: true }}

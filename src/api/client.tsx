@@ -2,6 +2,8 @@
 import type {
     ConceptItem,
     ConceptMotif,
+    MotifLink,
+    ContextItem,
     ConceptSaveResponse,
     LoginResponse,
     ConversationSummary,
@@ -99,6 +101,16 @@ function makeRetriableStatusSet() {
 }
 const RETRIABLE_STATUS = makeRetriableStatusSet();
 
+function isJsonLikeResponse(res: Response): boolean {
+    const ct = String(res.headers.get("content-type") || "").toLowerCase();
+    return ct.includes("application/json");
+}
+
+function isSseLikeResponse(res: Response): boolean {
+    const ct = String(res.headers.get("content-type") || "").toLowerCase();
+    return ct.includes("text/event-stream");
+}
+
 function withAuthHeaders(opts: RequestInit = {}, token?: string): HeadersInit {
     const headers: Record<string, string> = {
         "Content-Type": "application/json",
@@ -129,6 +141,11 @@ async function fetchWithBaseFallback(
                 lastErr = new Error(`HTTP ${res.status} from ${url}`);
                 continue;
             }
+            // 防止误命中前端静态服务（返回 200 text/html）导致“看似连通，实际 API 不可用”。
+            if (res.ok && (path.startsWith("/api/") || path === "/healthz") && !isJsonLikeResponse(res) && i < bases.length - 1) {
+                lastErr = new Error(`Non-JSON response from ${url}`);
+                continue;
+            }
             rememberWorkingBase(base, res.ok);
             return { res, base };
         } catch (err: any) {
@@ -150,6 +167,15 @@ async function http<T>(path: string, opts: RequestInit = {}, token?: string): Pr
         throw new Error(text || `HTTP ${res.status}`);
     }
     return (await res.json()) as T;
+}
+
+async function httpBlob(path: string, opts: RequestInit = {}, token?: string): Promise<Blob> {
+    const { res } = await fetchWithBaseFallback(path, opts, token);
+    if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(text || `HTTP ${res.status}`);
+    }
+    return res.blob();
 }
 
 /** --------- SSE（POST）流式 turn --------- */
@@ -257,6 +283,10 @@ async function postTurnStream(params: {
                 lastErr = new Error(`HTTP ${attempt.status} from ${url}`);
                 continue;
             }
+            if (attempt.ok && !isSseLikeResponse(attempt) && i < bases.length - 1) {
+                lastErr = new Error(`Non-SSE response from ${url}`);
+                continue;
+            }
             rememberWorkingBase(base, attempt.ok);
             res = attempt;
             break;
@@ -352,6 +382,8 @@ export const api = {
         graph: ConversationDetail["graph"],
         concepts?: ConceptItem[],
         motifs?: ConceptMotif[],
+        motifLinks?: MotifLink[],
+        contexts?: ContextItem[],
         opts?: { requestAdvice?: boolean; advicePrompt?: string }
     ) =>
         http<GraphSaveResponse>(
@@ -362,6 +394,8 @@ export const api = {
                     graph,
                     concepts: concepts || [],
                     motifs: motifs || [],
+                    motifLinks: motifLinks || [],
+                    contexts: contexts || [],
                     requestAdvice: !!opts?.requestAdvice,
                     advicePrompt: opts?.advicePrompt || "",
                 }),
@@ -393,4 +427,7 @@ export const api = {
     // ✅ 流式（SSE）
     turnStream: (token: string, cid: string, userText: string, handlers: TurnStreamHandlers) =>
         postTurnStream({ token, cid, userText, handlers }),
+
+    exportTravelPlanPdf: (token: string, cid: string) =>
+        httpBlob(`/api/conversations/${cid}/travel-plan/export.pdf`, {}, token),
 };

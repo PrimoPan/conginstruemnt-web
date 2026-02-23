@@ -107,6 +107,9 @@ export type ConversationDetail = {
     graph: CDG;
     concepts?: ConceptItem[];
     motifs?: ConceptMotif[];
+    motifLinks?: MotifLink[];
+    contexts?: ContextItem[];
+    travelPlanState?: TravelPlanState | null;
 };
 
 export type ConversationCreateResponse = ConversationDetail;
@@ -116,6 +119,9 @@ export type GraphSaveResponse = {
     graph: CDG;
     concepts?: ConceptItem[];
     motifs?: ConceptMotif[];
+    motifLinks?: MotifLink[];
+    contexts?: ContextItem[];
+    travelPlanState?: TravelPlanState | null;
     updatedAt: string;
     assistantText?: string;
     adviceError?: string;
@@ -126,7 +132,24 @@ export type ConceptSaveResponse = {
     graph: CDG;
     concepts: ConceptItem[];
     motifs?: ConceptMotif[];
+    motifLinks?: MotifLink[];
+    contexts?: ContextItem[];
+    travelPlanState?: TravelPlanState | null;
     updatedAt: string;
+};
+
+export type ConflictGateItem = {
+    id: string;
+    title: string;
+    status: MotifLifecycleStatus;
+    statusReason?: string;
+    confidence: number;
+};
+
+export type ConflictGatePayload = {
+    blocked: boolean;
+    unresolvedMotifs: ConflictGateItem[];
+    message: string;
 };
 
 export type TurnResponse = {
@@ -135,6 +158,10 @@ export type TurnResponse = {
     graph: CDG;
     concepts?: ConceptItem[];
     motifs?: ConceptMotif[];
+    motifLinks?: MotifLink[];
+    contexts?: ContextItem[];
+    travelPlanState?: TravelPlanState | null;
+    conflictGate?: ConflictGatePayload | null;
 };
 
 export type TurnItem = {
@@ -224,6 +251,7 @@ export type ConceptFamily =
     | "budget"
     | "people"
     | "lodging"
+    | "activity_preference"
     | "meeting_critical"
     | "limiting_factor"
     | "scenic_preference"
@@ -250,6 +278,8 @@ export type ConceptItem = {
 };
 
 export type ConceptMotifType = "pair" | "triad";
+export type MotifLifecycleStatus = "active" | "uncertain" | "deprecated" | "disabled" | "cancelled";
+export type MotifChangeState = "new" | "updated" | "unchanged";
 
 export type ConceptMotif = {
     id: string;
@@ -263,5 +293,68 @@ export type ConceptMotif = {
     confidence: number;
     supportEdgeIds: string[];
     supportNodeIds: string[];
+    status: MotifLifecycleStatus;
+    statusReason?: string;
+    resolved?: boolean;
+    resolvedAt?: string;
+    resolvedBy?: "user" | "system";
+    novelty: MotifChangeState;
     updatedAt: string;
+};
+
+export type MotifLinkType = "supports" | "depends_on" | "conflicts" | "refines";
+
+export type MotifLink = {
+    id: string;
+    fromMotifId: string;
+    toMotifId: string;
+    type: MotifLinkType;
+    confidence: number;
+    source: "system" | "user";
+    updatedAt: string;
+};
+
+export type ContextStatus = "active" | "uncertain" | "conflicted" | "disabled";
+
+export type ContextItem = {
+    id: string;
+    key: string;
+    title: string;
+    summary: string;
+    status: ContextStatus;
+    confidence: number;
+    conceptIds: string[];
+    motifIds: string[];
+    nodeIds: string[];
+    tags: string[];
+    openQuestions: string[];
+    locked: boolean;
+    paused: boolean;
+    updatedAt: string;
+};
+
+export type TravelPlanDay = {
+    day: number;
+    city?: string;
+    title: string;
+    items: string[];
+};
+
+export type TravelPlanState = {
+    version: number;
+    updatedAt: string;
+    summary: string;
+    destinations: string[];
+    constraints: string[];
+    totalDays?: number;
+    budget?: {
+        totalCny?: number;
+        spentCny?: number;
+        remainingCny?: number;
+    };
+    dayPlans: TravelPlanDay[];
+    source: {
+        turnCount: number;
+        lastTurnAt?: string;
+    };
 };

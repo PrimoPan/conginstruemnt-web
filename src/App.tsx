@@ -7,6 +7,8 @@ import type {
   CDG,
   ConceptItem,
   ConceptMotif,
+  MotifLink,
+  ContextItem,
   NodeEvidenceFocus,
   TurnResponse,
   TurnStreamErrorData,
@@ -61,6 +63,8 @@ export default function App() {
   const [draftGraphPreview, setDraftGraphPreview] = useState<CDG>(emptyGraph);
   const [concepts, setConcepts] = useState<ConceptItem[]>([]);
   const [motifs, setMotifs] = useState<ConceptMotif[]>([]);
+  const [motifLinks, setMotifLinks] = useState<MotifLink[]>([]);
+  const [contexts, setContexts] = useState<ContextItem[]>([]);
   const [conceptsDirty, setConceptsDirty] = useState(false);
   const [activeConceptId, setActiveConceptId] = useState<string>("");
   const [focusNodeId, setFocusNodeId] = useState<string>("");
@@ -69,6 +73,7 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [savingGraph, setSavingGraph] = useState(false);
   const [graphGenerating, setGraphGenerating] = useState(false);
+  const [exportingPlan, setExportingPlan] = useState(false);
   const loggedIn = !!token;
 
   // 中断上一次流（避免串台）
@@ -91,6 +96,8 @@ export default function App() {
         setDraftGraphPreview(safeGraph);
         setConcepts(Array.isArray(conv.concepts) ? conv.concepts : []);
         setMotifs(Array.isArray(conv.motifs) ? conv.motifs : []);
+        setMotifLinks(Array.isArray(conv.motifLinks) ? conv.motifLinks : []);
+        setContexts(Array.isArray(conv.contexts) ? conv.contexts : []);
         setConceptsDirty(false);
         setActiveConceptId("");
         setFocusNodeId("");
@@ -137,6 +144,8 @@ export default function App() {
     setDraftGraphPreview(emptyGraph);
     setConcepts([]);
     setMotifs([]);
+    setMotifLinks([]);
+    setContexts([]);
     setConceptsDirty(false);
     setActiveConceptId("");
     setFocusNodeId("");
@@ -153,6 +162,8 @@ export default function App() {
       setDraftGraphPreview(safeGraph);
       setConcepts(Array.isArray(r.concepts) ? r.concepts : []);
       setMotifs(Array.isArray(r.motifs) ? r.motifs : []);
+      setMotifLinks(Array.isArray(r.motifLinks) ? r.motifLinks : []);
+      setContexts(Array.isArray(r.contexts) ? r.contexts : []);
       setConceptsDirty(false);
     } finally {
       setBusy(false);
@@ -218,6 +229,8 @@ export default function App() {
             setConceptsDirty(false);
           }
           if (Array.isArray(out?.motifs)) setMotifs(out.motifs);
+          if (Array.isArray(out?.motifLinks)) setMotifLinks(out.motifLinks);
+          if (Array.isArray(out?.contexts)) setContexts(out.contexts);
         },
 
         onError: (err: TurnStreamErrorData) => {
@@ -256,7 +269,7 @@ export default function App() {
     if (!token || !cid) return;
     setSavingGraph(true);
     try {
-      const out = await api.saveGraph(token, cid, nextGraph, concepts, motifs, opts);
+      const out = await api.saveGraph(token, cid, nextGraph, concepts, motifs, motifLinks, contexts, opts);
       if (out?.graph) {
         const safeGraph = normalizeGraphClient(out.graph);
         setGraph(safeGraph);
@@ -266,6 +279,8 @@ export default function App() {
         setConcepts(out.concepts);
       }
       if (Array.isArray(out?.motifs)) setMotifs(out.motifs);
+      if (Array.isArray(out?.motifLinks)) setMotifLinks(out.motifLinks);
+      if (Array.isArray(out?.contexts)) setContexts(out.contexts);
       setConceptsDirty(false);
       if (out?.assistantText) {
         setMessages((prev) => [...prev, { id: makeId("ga"), role: "assistant", text: out.assistantText || "" }]);
@@ -280,11 +295,55 @@ export default function App() {
     }
   }
 
+  async function onExportPlan() {
+    if (!token || !cid) return;
+    if (!messages.length) return;
+    setExportingPlan(true);
+    try {
+      const blob = await api.exportTravelPlanPdf(token, cid);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `travel-plan-${cid.slice(-8)}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: makeId("exp"),
+          role: "assistant",
+          text: `导出失败：${e?.message || String(e)}`,
+        },
+      ]);
+    } finally {
+      setExportingPlan(false);
+    }
+  }
+
   function onPatchConcept(conceptId: string, patch: Partial<ConceptItem>) {
     const next = (concepts || []).map((c) =>
         c.id === conceptId ? { ...c, ...patch, updatedAt: new Date().toISOString() } : c
     );
     setConcepts(next);
+    setConceptsDirty(true);
+  }
+
+  function onPatchMotif(motifId: string, patch: Partial<ConceptMotif>) {
+    const next = (motifs || []).map((m) =>
+        m.id === motifId ? { ...m, ...patch, updatedAt: new Date().toISOString() } : m
+    );
+    setMotifs(next);
+    setConceptsDirty(true);
+  }
+
+  function onPatchMotifLink(motifLinkId: string, patch: Partial<MotifLink>) {
+    const next = (motifLinks || []).map((x) =>
+      x.id === motifLinkId ? { ...x, ...patch, updatedAt: new Date().toISOString() } : x
+    );
+    setMotifLinks(next);
     setConceptsDirty(true);
   }
 
@@ -326,6 +385,7 @@ export default function App() {
   const mergedFocus = nodeHoverFocus || conceptFocus;
 
   const disabled = !token || !cid;
+  const exportPlanDisabled = disabled || messages.length === 0 || graphGenerating;
 
   return (
       <div className="App">
@@ -334,10 +394,13 @@ export default function App() {
             setUsername={setUsername}
             onLogin={onLogin}
             onNewConversation={onNewConversation}
+            onExportPlan={onExportPlan}
             loggedIn={loggedIn}
             cid={cid}
             graphVersion={graph.version}
             busy={busy}
+            exportingPlan={exportingPlan}
+            exportPlanDisabled={exportPlanDisabled}
         />
 
         <div className="Main">
@@ -354,12 +417,17 @@ export default function App() {
           <div className="Center">
             <ConceptPanel
                 concepts={conceptsView}
+                motifs={motifs}
+                motifLinks={motifLinks}
+                contexts={contexts}
                 activeConceptId={activeConceptId}
                 saving={savingGraph}
                 onSelect={setActiveConceptId}
                 onClearSelect={() => setActiveConceptId("")}
                 onEditConceptNode={onEditConceptNode}
                 onPatchConcept={onPatchConcept}
+                onPatchMotif={onPatchMotif}
+                onPatchMotifLink={onPatchMotifLink}
             />
           </div>
 
