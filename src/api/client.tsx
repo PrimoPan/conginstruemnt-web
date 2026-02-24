@@ -128,7 +128,8 @@ function isNetworkLikeError(err: unknown) {
 async function fetchWithBaseFallback(
     path: string,
     opts: RequestInit = {},
-    token?: string
+    token?: string,
+    mode: "json" | "binary" = "json"
 ): Promise<{ res: Response; base: string }> {
     const bases = resolveApiBases();
     let lastErr: any = null;
@@ -142,9 +143,20 @@ async function fetchWithBaseFallback(
                 continue;
             }
             // 防止误命中前端静态服务（返回 200 text/html）导致“看似连通，实际 API 不可用”。
-            if (res.ok && (path.startsWith("/api/") || path === "/healthz") && !isJsonLikeResponse(res) && i < bases.length - 1) {
-                lastErr = new Error(`Non-JSON response from ${url}`);
-                continue;
+            if (res.ok && (path.startsWith("/api/") || path === "/healthz")) {
+                const ct = String(res.headers.get("content-type") || "").toLowerCase();
+                const isHtmlLike = ct.includes("text/html");
+                if (mode === "json" && !isJsonLikeResponse(res) && i < bases.length - 1) {
+                    lastErr = new Error(`Non-JSON response from ${url}`);
+                    continue;
+                }
+                if (mode === "binary" && isHtmlLike && i < bases.length - 1) {
+                    lastErr = new Error(`Unexpected HTML response from ${url}`);
+                    continue;
+                }
+                if (mode === "binary" && isHtmlLike && i >= bases.length - 1) {
+                    throw new Error(`Export endpoint returned HTML instead of PDF: ${url}`);
+                }
             }
             rememberWorkingBase(base, res.ok);
             return { res, base };
@@ -160,7 +172,7 @@ async function fetchWithBaseFallback(
 
 /** --------- 普通 JSON 请求 --------- */
 async function http<T>(path: string, opts: RequestInit = {}, token?: string): Promise<T> {
-    const { res } = await fetchWithBaseFallback(path, opts, token);
+    const { res } = await fetchWithBaseFallback(path, opts, token, "json");
 
     if (!res.ok) {
         const text = await res.text().catch(() => "");
@@ -170,10 +182,15 @@ async function http<T>(path: string, opts: RequestInit = {}, token?: string): Pr
 }
 
 async function httpBlob(path: string, opts: RequestInit = {}, token?: string): Promise<Blob> {
-    const { res } = await fetchWithBaseFallback(path, opts, token);
+    const { res } = await fetchWithBaseFallback(path, opts, token, "binary");
     if (!res.ok) {
         const text = await res.text().catch(() => "");
         throw new Error(text || `HTTP ${res.status}`);
+    }
+    const ct = String(res.headers.get("content-type") || "").toLowerCase();
+    if (ct.includes("text/html")) {
+        const text = await res.text().catch(() => "");
+        throw new Error(text || "Unexpected HTML response when downloading binary file");
     }
     return res.blob();
 }
