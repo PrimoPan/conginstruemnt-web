@@ -114,6 +114,34 @@ body {
   font-size: 13px;
 }
 
+.FlowPanel__header {
+  gap: 10px;
+}
+
+.FlowPanel__headerTabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.FlowPanel__headerTab {
+  height: 30px;
+  border-radius: 10px;
+  border: 1px solid rgba(15, 23, 42, 0.16);
+  background: rgba(255, 255, 255, 0.92);
+  color: rgba(15, 23, 42, 0.72);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 0 10px;
+  cursor: pointer;
+}
+
+.FlowPanel__headerTab.is-active {
+  border-color: rgba(217, 119, 6, 0.45);
+  color: rgba(146, 64, 14, 0.95);
+  background: rgba(254, 243, 199, 0.74);
+}
+
 .FlowStatusTag {
   display: inline-flex;
   align-items: center;
@@ -635,6 +663,10 @@ body {
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.95));
 }
 
+.ConceptPanel__tabs--compact {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .ConceptPanel__tab {
   height: 30px;
   border-radius: 10px;
@@ -651,6 +683,11 @@ body {
   border-color: rgba(37, 99, 235, 0.34);
   background: rgba(219, 234, 254, 0.7);
   color: rgba(30, 64, 175, 0.95);
+}
+
+.ConceptPanel__tab--large {
+  height: 34px;
+  font-size: 13px;
 }
 
 .ConceptPanel__list {
@@ -876,6 +913,207 @@ body {
   justify-content: space-between;
   color: rgba(15, 23, 42, 0.52);
   font-size: 11px;
+}
+
+.ConceptCard--motifLite {
+  border-radius: 20px;
+  min-height: 124px;
+  gap: 8px;
+}
+
+.MotifCard__head {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 8px;
+  align-items: start;
+}
+
+.MotifCard__status {
+  font-size: 16px;
+  line-height: 1;
+  margin-top: 2px;
+}
+
+.MotifCard__titleWrap {
+  min-width: 0;
+}
+
+.MotifCard__pattern {
+  font-size: 12px;
+  color: rgba(15, 23, 42, 0.78);
+  border-left: 2px solid rgba(148, 163, 184, 0.42);
+  padding-left: 7px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.MotifCard__concepts {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.MotifCard__conceptTag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  height: 24px;
+  border-radius: 999px;
+  border: 1px solid rgba(217, 119, 6, 0.45);
+  background: rgba(254, 243, 199, 0.58);
+  color: rgba(120, 53, 15, 0.95);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.MotifCard__progress {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.MotifCard__bar {
+  height: 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.42);
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.MotifCard__bar.is-on {
+  border-color: rgba(74, 222, 128, 0.62);
+  background: rgba(134, 239, 172, 0.78);
+}
+
+.MotifReasoningCanvas {
+  height: 100%;
+  min-height: 0;
+  position: relative;
+}
+
+.MotifReasoningCanvas__empty {
+  position: absolute;
+  z-index: 6;
+  top: 14px;
+  left: 14px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px dashed rgba(15, 23, 42, 0.24);
+  background: rgba(255, 255, 255, 0.92);
+  font-size: 12px;
+  color: rgba(15, 23, 42, 0.62);
+}
+
+.MotifReasoningNode {
+  width: 290px;
+  border-radius: 16px;
+  border: 1px solid rgba(15, 23, 42, 0.18);
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 1px 10px rgba(0, 0, 0, 0.06);
+  padding: 10px 11px 9px;
+  display: grid;
+  gap: 6px;
+}
+
+.MotifReasoningNode.is-selected {
+  box-shadow: 0 0 0 2px rgba(234, 88, 12, 0.22), 0 6px 20px rgba(124, 45, 18, 0.15);
+}
+
+.MotifReasoningNode__head {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 8px;
+  align-items: start;
+}
+
+.MotifReasoningNode__status {
+  font-size: 14px;
+  line-height: 1;
+  margin-top: 2px;
+}
+
+.MotifReasoningNode__title {
+  font-size: 13px;
+  line-height: 1.25;
+  font-weight: 700;
+  color: #0f172a;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.MotifReasoningNode__badge {
+  border-radius: 999px;
+  border: 1px solid rgba(15, 23, 42, 0.2);
+  background: rgba(248, 250, 252, 0.95);
+  font-size: 10px;
+  color: rgba(15, 23, 42, 0.76);
+  padding: 1px 7px;
+}
+
+.MotifReasoningNode__meta {
+  font-size: 11px;
+  color: rgba(15, 23, 42, 0.62);
+}
+
+.MotifReasoningNode__pattern {
+  font-size: 12px;
+  color: rgba(15, 23, 42, 0.78);
+  border-left: 2px solid rgba(71, 85, 105, 0.34);
+  padding-left: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.MotifReasoningNode__concepts {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.MotifReasoningNode__conceptTag {
+  font-size: 10px;
+  color: rgba(30, 41, 59, 0.85);
+  border: 1px solid rgba(148, 163, 184, 0.36);
+  background: rgba(248, 250, 252, 0.96);
+  border-radius: 999px;
+  padding: 1px 6px;
+}
+
+.MotifReasoningNode__progress {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.MotifReasoningNode__bar {
+  height: 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.34);
+  background: rgba(255, 255, 255, 0.96);
+}
+
+.MotifReasoningNode__bar.is-on {
+  border-color: rgba(74, 222, 128, 0.62);
+  background: rgba(134, 239, 172, 0.86);
+}
+
+.MotifReasoningNode__refs {
+  font-size: 10px;
+  color: rgba(15, 23, 42, 0.54);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.MotifReasoningNode__handle {
+  width: 8px !important;
+  height: 8px !important;
+  border: none !important;
+  background: #1f2937 !important;
 }
 
 .ConceptPanel__footer {

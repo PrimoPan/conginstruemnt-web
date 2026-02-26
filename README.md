@@ -13,8 +13,8 @@ Language / 语言：
 
 1. 用户登录与新建会话。
 2. 左侧聊天（流式 token 实时显示）。
-3. 中间 `Concept / Motif / Context` 三层面板展示与交互。
-4. 右侧 CDG 流程图渲染（React Flow）。
+3. 中间 `Concept / Motif` 双层面板展示与交互。
+4. 右侧双画布渲染（`Concept Graph` + `Motif Reasoning`，React Flow）。
 5. 可编辑流程图（节点参数、边类型、拖拽重挂父子关系）。
 6. 节点 hover 反向高亮聊天证据片段。
 7. 与后端接口的类型对齐与协议消费（JSON + SSE）。
@@ -78,8 +78,8 @@ REACT_APP_API_BASE_URLS=http://127.0.0.1:3001,http://43.138.212.17:3001
 
 1. 顶栏：用户名输入、登录、新建对话、导出旅行计划 PDF、会话 ID 与图版本。
 2. 左侧：聊天区（独立滚动，输入区固定底部）。
-3. 中间：Concept 区（三层 Tab：Concept / Motif / Context）。
-4. 右侧：流程图区（固定视口高度，不跟随聊天内容拉长）。
+3. 中间：Concept 区（双 Tab：Concept / Motif）。
+4. 右侧：双画布区（`Concept Graph` 可编辑 + `Motif Reasoning` 推理可视化）。
 
 交互要点：
 
@@ -90,8 +90,8 @@ REACT_APP_API_BASE_URLS=http://127.0.0.1:3001,http://43.138.212.17:3001
 - Concept 锁定/暂停先在前端本地生效，点击右上角“保存并生成建议”后再统一写回后端。
 - Concept 暂停会将右侧关联节点置灰（软删除视图，可恢复）。
 - Concept 是独立语义槽位对象，可关联多个节点（`1 concept -> N nodes`），并由 `primaryNodeId` 作为主展示锚点。
-- Motif 卡片展示关系模式与状态机（`active / uncertain / deprecated / disabled / cancelled`）。
-- Context 卡片展示场景级聚合（状态、摘要、开放问题），用于 PRD 中的 Context 层外化。
+- Motif 卡片展示关系模式与状态机（`active / uncertain / deprecated / disabled / cancelled`），并展示 `C1/C2/...` 组合模式与应用来源提示。
+- 右侧 `Motif Reasoning` 画布用于可视化 LLM 如何使用 motif 之间的依赖关系进行推理。
 - 鼠标 hover 流程图节点时，左侧聊天会高亮证据词（`evidenceIds`）。
 - 右上角“保存并生成建议”会把前端完整编辑图写回后端，并可选触发“基于新图”的建议生成。
 - “导出旅行计划PDF”按钮在无对话内容时禁用；有对话后可下载后端生成的中文 PDF（按天计划 + 预算概览）。
@@ -127,7 +127,7 @@ SSE 事件：
 - `token`：增量文本
 - `ping`：心跳
 - `done`：最终输出（`assistantText + graphPatch + graph`）
-- `done` 同时可携带 `concepts/motifs/motifLinks/contexts`；若触发冲突门控，会附带 `conflictGate`
+- `done` 同时可携带 `concepts/motifs/motifLinks/motifReasoningView/contexts`；若触发冲突门控，会附带 `conflictGate`
 - `error`：错误信息
 
 ---
@@ -140,9 +140,8 @@ SSE 事件：
 4. `core/graphToFlow.tsx`：把后端 CDG 映射成 React Flow 节点与边（分层布局、非法边过滤、meeting/language/generic constraint 槽位映射）。
 5. `core/graphSafe.ts`：前端入站 graph 快照容错归一化（首轮/异常数据兜底）。
 5. `components/ChatPanel.tsx`：聊天渲染 + 输入 + 证据高亮。
-6. `components/ConceptPanel.tsx`：中间 Concept 模块（筛选、高亮、锁定/暂停、编辑）。
-   - 现已升级为四层 Tab：Concept / Motif / Context / Link。
-7. `components/FlowPanel.tsx`：流程图主编排（草稿图状态、选中状态、增删保存、拖拽落位重挂）。
+6. `components/ConceptPanel.tsx`：中间 Concept 模块（Concept / Motif 双 Tab，筛选、高亮、锁定/暂停、编辑）。
+7. `components/FlowPanel.tsx`：右侧双画布主编排（Concept 图编辑 + Motif 推理图）。
 8. `components/CdgFlowNode.tsx`：自定义节点卡片（纯展示）。
 9. `components/flow/FlowCanvas.tsx`：React Flow 画布层（渲染、hover、高亮回传）。
 10. `components/flow/FlowToolbar.tsx`：工具栏（新增、保存、状态）。
@@ -189,9 +188,11 @@ conginstrument-web/
       ├─ TopBar.tsx
       ├─ ChatPanel.tsx
       ├─ FlowPanel.tsx
+      ├─ ConceptPanel.tsx
       ├─ CdgFlowNode.tsx
       └─ flow/
          ├─ FlowCanvas.tsx
+         ├─ MotifReasoningCanvas.tsx
          ├─ FlowToolbar.tsx
          ├─ FlowInspector.tsx
          └─ graphDraftUtils.ts

@@ -8,6 +8,7 @@ import type {
   ConceptItem,
   ConceptMotif,
   MotifLink,
+  MotifReasoningView,
   ContextItem,
   NodeEvidenceFocus,
   TurnResponse,
@@ -20,6 +21,7 @@ import { normalizeGraphClient } from "./core/graphSafe";
 import { ConceptPanel } from "./components/ConceptPanel";
 
 const emptyGraph: CDG = { id: "", version: 0, nodes: [], edges: [] };
+const emptyMotifReasoningView: MotifReasoningView = { nodes: [], edges: [] };
 
 function clamp01(v: any, fallback = 0.7) {
   const n = Number(v);
@@ -64,9 +66,11 @@ export default function App() {
   const [concepts, setConcepts] = useState<ConceptItem[]>([]);
   const [motifs, setMotifs] = useState<ConceptMotif[]>([]);
   const [motifLinks, setMotifLinks] = useState<MotifLink[]>([]);
+  const [motifReasoningView, setMotifReasoningView] = useState<MotifReasoningView>(emptyMotifReasoningView);
   const [contexts, setContexts] = useState<ContextItem[]>([]);
   const [conceptsDirty, setConceptsDirty] = useState(false);
   const [activeConceptId, setActiveConceptId] = useState<string>("");
+  const [activeMotifId, setActiveMotifId] = useState<string>("");
   const [focusNodeId, setFocusNodeId] = useState<string>("");
   const [nodeHoverFocus, setNodeHoverFocus] = useState<NodeEvidenceFocus | null>(null);
 
@@ -97,9 +101,11 @@ export default function App() {
         setConcepts(Array.isArray(conv.concepts) ? conv.concepts : []);
         setMotifs(Array.isArray(conv.motifs) ? conv.motifs : []);
         setMotifLinks(Array.isArray(conv.motifLinks) ? conv.motifLinks : []);
+        setMotifReasoningView(conv.motifReasoningView || emptyMotifReasoningView);
         setContexts(Array.isArray(conv.contexts) ? conv.contexts : []);
         setConceptsDirty(false);
         setActiveConceptId("");
+        setActiveMotifId("");
         setFocusNodeId("");
 
         const turns = await api.getTurns(token, cid, 120);
@@ -145,9 +151,11 @@ export default function App() {
     setConcepts([]);
     setMotifs([]);
     setMotifLinks([]);
+    setMotifReasoningView(emptyMotifReasoningView);
     setContexts([]);
     setConceptsDirty(false);
     setActiveConceptId("");
+    setActiveMotifId("");
     setFocusNodeId("");
     setNodeHoverFocus(null);
     setGraphGenerating(false);
@@ -163,6 +171,7 @@ export default function App() {
       setConcepts(Array.isArray(r.concepts) ? r.concepts : []);
       setMotifs(Array.isArray(r.motifs) ? r.motifs : []);
       setMotifLinks(Array.isArray(r.motifLinks) ? r.motifLinks : []);
+      setMotifReasoningView(r.motifReasoningView || emptyMotifReasoningView);
       setContexts(Array.isArray(r.contexts) ? r.contexts : []);
       setConceptsDirty(false);
     } finally {
@@ -230,6 +239,7 @@ export default function App() {
           }
           if (Array.isArray(out?.motifs)) setMotifs(out.motifs);
           if (Array.isArray(out?.motifLinks)) setMotifLinks(out.motifLinks);
+          setMotifReasoningView(out?.motifReasoningView || emptyMotifReasoningView);
           if (Array.isArray(out?.contexts)) setContexts(out.contexts);
         },
 
@@ -280,6 +290,7 @@ export default function App() {
       }
       if (Array.isArray(out?.motifs)) setMotifs(out.motifs);
       if (Array.isArray(out?.motifLinks)) setMotifLinks(out.motifLinks);
+      setMotifReasoningView(out?.motifReasoningView || emptyMotifReasoningView);
       if (Array.isArray(out?.contexts)) setContexts(out.contexts);
       setConceptsDirty(false);
       if (out?.assistantText) {
@@ -339,19 +350,12 @@ export default function App() {
     setConceptsDirty(true);
   }
 
-  function onPatchMotifLink(motifLinkId: string, patch: Partial<MotifLink>) {
-    const next = (motifLinks || []).map((x) =>
-      x.id === motifLinkId ? { ...x, ...patch, updatedAt: new Date().toISOString() } : x
-    );
-    setMotifLinks(next);
-    setConceptsDirty(true);
-  }
-
   function onEditConceptNode(conceptId: string) {
     const c = (concepts || []).find((x) => x.id === conceptId);
     const nodeId = c?.primaryNodeId || c?.nodeIds?.[0] || "";
     if (!nodeId) return;
     setActiveConceptId(conceptId);
+    setActiveMotifId("");
     setFocusNodeId(nodeId);
   }
 
@@ -418,16 +422,21 @@ export default function App() {
             <ConceptPanel
                 concepts={conceptsView}
                 motifs={motifs}
-                motifLinks={motifLinks}
-                contexts={contexts}
                 activeConceptId={activeConceptId}
+                activeMotifId={activeMotifId}
                 saving={savingGraph}
-                onSelect={setActiveConceptId}
+                onSelect={(conceptId) => {
+                  setActiveConceptId(conceptId);
+                  setActiveMotifId("");
+                }}
+                onSelectMotif={(motifId) => {
+                  setActiveMotifId(motifId);
+                }}
                 onClearSelect={() => setActiveConceptId("")}
+                onClearMotifSelect={() => setActiveMotifId("")}
                 onEditConceptNode={onEditConceptNode}
                 onPatchConcept={onPatchConcept}
                 onPatchMotif={onPatchMotif}
-                onPatchMotifLink={onPatchMotifLink}
             />
           </div>
 
@@ -435,9 +444,17 @@ export default function App() {
             <FlowPanel
                 graph={graph}
                 concepts={concepts}
+                motifs={motifs}
+                motifLinks={motifLinks}
+                motifReasoningView={motifReasoningView}
                 activeConceptId={activeConceptId}
+                activeMotifId={activeMotifId}
                 generatingGraph={graphGenerating}
                 onNodeEvidenceHover={setNodeHoverFocus}
+                onSelectMotif={(motifId) => setActiveMotifId(motifId)}
+                onSelectConcept={(conceptId) => {
+                  setActiveConceptId(conceptId);
+                }}
                 onSaveGraph={onSaveGraph}
                 savingGraph={savingGraph}
                 extraDirty={conceptsDirty}

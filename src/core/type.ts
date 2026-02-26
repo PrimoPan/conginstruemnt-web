@@ -108,6 +108,7 @@ export type ConversationDetail = {
     concepts?: ConceptItem[];
     motifs?: ConceptMotif[];
     motifLinks?: MotifLink[];
+    motifReasoningView?: MotifReasoningView;
     contexts?: ContextItem[];
     travelPlanState?: TravelPlanState | null;
 };
@@ -120,6 +121,7 @@ export type GraphSaveResponse = {
     concepts?: ConceptItem[];
     motifs?: ConceptMotif[];
     motifLinks?: MotifLink[];
+    motifReasoningView?: MotifReasoningView;
     contexts?: ContextItem[];
     travelPlanState?: TravelPlanState | null;
     updatedAt: string;
@@ -133,6 +135,7 @@ export type ConceptSaveResponse = {
     concepts: ConceptItem[];
     motifs?: ConceptMotif[];
     motifLinks?: MotifLink[];
+    motifReasoningView?: MotifReasoningView;
     contexts?: ContextItem[];
     travelPlanState?: TravelPlanState | null;
     updatedAt: string;
@@ -159,6 +162,7 @@ export type TurnResponse = {
     concepts?: ConceptItem[];
     motifs?: ConceptMotif[];
     motifLinks?: MotifLink[];
+    motifReasoningView?: MotifReasoningView;
     contexts?: ContextItem[];
     travelPlanState?: TravelPlanState | null;
     conflictGate?: ConflictGatePayload | null;
@@ -312,6 +316,33 @@ export type MotifLink = {
     confidence: number;
     source: "system" | "user";
     updatedAt: string;
+};
+
+export type MotifReasoningNode = {
+    id: string;
+    motifId: string;
+    title: string;
+    relation: EdgeType;
+    motifType: ConceptMotifType;
+    status: MotifLifecycleStatus;
+    confidence: number;
+    pattern: string;
+    conceptIds: string[];
+    conceptTitles: string[];
+    sourceRefs: string[];
+};
+
+export type MotifReasoningEdge = {
+    id: string;
+    from: string;
+    to: string;
+    type: MotifLinkType;
+    confidence: number;
+};
+
+export type MotifReasoningView = {
+    nodes: MotifReasoningNode[];
+    edges: MotifReasoningEdge[];
 };
 
 export type ContextStatus = "active" | "uncertain" | "conflicted" | "disabled";

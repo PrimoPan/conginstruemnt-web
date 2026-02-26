@@ -1,12 +1,22 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "@xyflow/react/dist/style.css";
-import type { CDG, CDGNode, ConceptItem, EdgeType, NodeEvidenceFocus } from "../core/type";
+import type {
+    CDG,
+    CDGNode,
+    ConceptItem,
+    ConceptMotif,
+    EdgeType,
+    MotifLink,
+    MotifReasoningView,
+    NodeEvidenceFocus,
+} from "../core/type";
 import { cdgToFlow } from "../core/graphToFlow";
 import { normalizeGraphClient } from "../core/graphSafe";
 import { CdgFlowNode } from "./CdgFlowNode";
 import { FlowCanvas, useFlowState } from "./flow/FlowCanvas";
 import { FlowInspector } from "./flow/FlowInspector";
 import { FlowToolbar } from "./flow/FlowToolbar";
+import { MotifReasoningCanvas } from "./flow/MotifReasoningCanvas";
 import {
     EDITABLE_PARENT_EDGE_TYPES,
     deleteNodeAndReconnect,
@@ -66,13 +76,19 @@ function mergeIncomingGraphWithLocalUi(incoming: CDG, local: CDG): CDG {
 export function FlowPanel(props: {
     graph: CDG;
     concepts?: ConceptItem[];
+    motifs?: ConceptMotif[];
+    motifLinks?: MotifLink[];
+    motifReasoningView?: MotifReasoningView;
     activeConceptId?: string;
+    activeMotifId?: string;
     extraDirty?: boolean;
     focusNodeId?: string;
     onFocusNodeHandled?: () => void;
     onDraftGraphChange?: (graph: CDG) => void;
     generatingGraph?: boolean;
     onNodeEvidenceHover?: (focus: NodeEvidenceFocus | null) => void;
+    onSelectMotif?: (motifId: string) => void;
+    onSelectConcept?: (conceptId: string) => void;
     onSaveGraph?: (
         graph: CDG,
         opts?: { requestAdvice?: boolean; advicePrompt?: string }
@@ -82,16 +98,23 @@ export function FlowPanel(props: {
     const {
         graph,
         concepts,
+        motifs,
+        motifLinks,
+        motifReasoningView,
         activeConceptId,
+        activeMotifId,
         extraDirty,
         focusNodeId,
         onFocusNodeHandled,
         onDraftGraphChange,
         generatingGraph,
         onNodeEvidenceHover,
+        onSelectMotif,
+        onSelectConcept,
         onSaveGraph,
         savingGraph,
     } = props;
+    const [canvasView, setCanvasView] = useState<"concept" | "motif">("concept");
     const [draftGraph, setDraftGraph] = useState<CDG>(normalizeGraphClient(graph));
     const [dirty, setDirty] = useState(false);
     const [selectedNodeId, setSelectedNodeId] = useState<string>("");
@@ -151,10 +174,19 @@ export function FlowPanel(props: {
         if (!focusNodeId) return;
         const exists = (draftGraph.nodes || []).some((n) => n.id === focusNodeId);
         if (!exists) return;
+        setCanvasView("concept");
         setSelectedNodeId(focusNodeId);
         setSelectedEdgeId("");
         onFocusNodeHandled?.();
     }, [focusNodeId, draftGraph.nodes, onFocusNodeHandled]);
+
+    useEffect(() => {
+        if (activeMotifId) setCanvasView("motif");
+    }, [activeMotifId]);
+
+    useEffect(() => {
+        if (activeConceptId && !activeMotifId) setCanvasView("concept");
+    }, [activeConceptId, activeMotifId]);
 
     const updateDraftGraph = useCallback((updater: (prev: CDG) => CDG) => {
         setDraftGraph((prev) => {
@@ -342,52 +374,84 @@ export function FlowPanel(props: {
 
     return (
         <div className="Panel">
-            <div className="PanelHeader">
-                <span>{generatingGraph ? "意图分析图生成中" : "意图流程图（可编辑）"}</span>
+            <div className="PanelHeader FlowPanel__header">
+                <div className="FlowPanel__headerTabs">
+                    <button
+                        type="button"
+                        className={`FlowPanel__headerTab ${canvasView === "concept" ? "is-active" : ""}`}
+                        onClick={() => setCanvasView("concept")}
+                    >
+                        Concept Graph
+                    </button>
+                    <button
+                        type="button"
+                        className={`FlowPanel__headerTab ${canvasView === "motif" ? "is-active" : ""}`}
+                        onClick={() => setCanvasView("motif")}
+                    >
+                        Motif Reasoning
+                    </button>
+                </div>
+                {canvasView === "concept" && generatingGraph ? (
+                    <span className="FlowStatusTag">意图分析图生成中</span>
+                ) : null}
             </div>
             <div className="FlowCanvas">
-                <FlowToolbar
-                    onAddNode={addNode}
-                    onSave={saveGraph}
-                    canSave={!!onSaveGraph && hasUnsavedChanges}
-                    saving={!!savingGraph}
-                    dirty={hasUnsavedChanges}
-                    generating={!!generatingGraph}
-                />
+                {canvasView === "concept" ? (
+                    <>
+                        <FlowToolbar
+                            onAddNode={addNode}
+                            onSave={saveGraph}
+                            canSave={!!onSaveGraph && hasUnsavedChanges}
+                            saving={!!savingGraph}
+                            dirty={hasUnsavedChanges}
+                            generating={!!generatingGraph}
+                        />
 
-                <FlowInspector
-                    node={selectedNode}
-                    edge={selectedEdge}
-                    onPatchNode={onNodePatch}
-                    onPatchEdgeType={patchEdgeType}
-                    onDeleteNode={deleteNode}
-                />
+                        <FlowInspector
+                            node={selectedNode}
+                            edge={selectedEdge}
+                            onPatchNode={onNodePatch}
+                            onPatchEdgeType={patchEdgeType}
+                            onDeleteNode={deleteNode}
+                        />
 
-                <FlowCanvas
-                    graphKey={`${draftGraph.id || "graph"}:${draftGraph.version ?? 0}`}
-                    nodes={nodes}
-                    edges={edges}
-                    nodeTypes={nodeTypes}
-                    onNodesChange={onNodesChange}
-                    onEdgesChange={onEdgesChange}
-                    onNodeDragStart={onNodeDragStart}
-                    onNodeDragStop={onNodeDragStop}
-                    onNodeClick={(nodeId) => {
-                        setSelectedNodeId(nodeId);
-                        setSelectedEdgeId("");
-                    }}
-                    onNodeHover={(focus) => onNodeEvidenceHover?.(focus)}
-                    onEdgeClick={(edgeId) => {
-                        setSelectedEdgeId(edgeId);
-                        setSelectedNodeId("");
-                    }}
-                    onPaneClick={() => {
-                        setSelectedEdgeId("");
-                        setSelectedNodeId("");
-                        onNodeEvidenceHover?.(null);
-                    }}
-                />
-                {saveError ? <div className="FlowToolbar__error">{saveError}</div> : null}
+                        <FlowCanvas
+                            graphKey={`${draftGraph.id || "graph"}:${draftGraph.version ?? 0}`}
+                            nodes={nodes}
+                            edges={edges}
+                            nodeTypes={nodeTypes}
+                            onNodesChange={onNodesChange}
+                            onEdgesChange={onEdgesChange}
+                            onNodeDragStart={onNodeDragStart}
+                            onNodeDragStop={onNodeDragStop}
+                            onNodeClick={(nodeId) => {
+                                setSelectedNodeId(nodeId);
+                                setSelectedEdgeId("");
+                            }}
+                            onNodeHover={(focus) => onNodeEvidenceHover?.(focus)}
+                            onEdgeClick={(edgeId) => {
+                                setSelectedEdgeId(edgeId);
+                                setSelectedNodeId("");
+                            }}
+                            onPaneClick={() => {
+                                setSelectedEdgeId("");
+                                setSelectedNodeId("");
+                                onNodeEvidenceHover?.(null);
+                            }}
+                        />
+                        {saveError ? <div className="FlowToolbar__error">{saveError}</div> : null}
+                    </>
+                ) : (
+                    <MotifReasoningCanvas
+                        motifs={motifs || []}
+                        motifLinks={motifLinks || []}
+                        concepts={concepts || []}
+                        reasoningView={motifReasoningView}
+                        activeMotifId={activeMotifId}
+                        onSelectMotif={onSelectMotif}
+                        onSelectConcept={onSelectConcept}
+                    />
+                )}
             </div>
         </div>
     );
