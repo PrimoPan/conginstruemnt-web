@@ -333,11 +333,14 @@ const MotifNode = memo(function MotifNode({ data, selected }: NodeProps<Node<Mot
             <div className="MotifReasoningNode__pattern">{data.pattern}</div>
 
             <div className="MotifReasoningNode__concepts">
-                {data.conceptLabels.slice(0, 3).map((x) => (
+                {data.conceptLabels.slice(0, 4).map((x) => (
                     <span key={`${data.motifId}_${x}`} className="MotifReasoningNode__conceptTag">
                         {x}
                     </span>
                 ))}
+                {data.conceptLabels.length > 4 ? (
+                    <span className="MotifReasoningNode__conceptTag">+{data.conceptLabels.length - 4}</span>
+                ) : null}
             </div>
 
             <div className="MotifReasoningNode__progress">
@@ -378,15 +381,6 @@ export function MotifReasoningCanvas(props: {
     }, [props.reasoningView, props.motifs, props.motifLinks, props.concepts]);
 
     const { nodes, edges } = useMemo(() => layoutReasoningGraph(resolvedView), [resolvedView]);
-    const motifToConcept = useMemo(() => {
-        const m = new Map<string, string>();
-        for (const item of resolvedView.nodes || []) {
-            const firstConcept = Array.isArray(item.conceptIds) ? item.conceptIds[0] : "";
-            if (firstConcept) m.set(item.motifId, firstConcept);
-        }
-        return m;
-    }, [resolvedView.nodes]);
-
     const renderedNodes = useMemo(
         () =>
             nodes.map((n) => ({
@@ -416,8 +410,6 @@ export function MotifReasoningCanvas(props: {
                 onNodeClick={(_, node) => {
                     const motifId = node.data?.motifId || "";
                     if (motifId) props.onSelectMotif?.(motifId);
-                    const conceptId = motifToConcept.get(motifId) || "";
-                    if (conceptId) props.onSelectConcept?.(conceptId);
                 }}
                 proOptions={{ hideAttribution: true }}
             >

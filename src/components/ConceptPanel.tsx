@@ -333,11 +333,14 @@ export function ConceptPanel(props: {
                                 <div className="ConceptCard__desc">{m.description || "暂无说明"}</div>
                                 <div className="MotifCard__pattern">{pattern}</div>
                                 <div className="MotifCard__concepts">
-                                    {conceptTitles.slice(0, 3).map((title, idx) => (
+                                    {conceptTitles.slice(0, 4).map((title, idx) => (
                                         <span key={`${m.id}_c_${idx}`} className="MotifCard__conceptTag">
-                                            C{idx + 1}
+                                            C{idx + 1}:{cleanText(title, 14)}
                                         </span>
                                     ))}
+                                    {conceptTitles.length > 4 ? (
+                                        <span className="MotifCard__conceptTag">+{conceptTitles.length - 4}</span>
+                                    ) : null}
                                 </div>
                                 <div className="MotifCard__progress">
                                     {[0, 1, 2, 3].map((i) => (
@@ -436,4 +439,3 @@ export function ConceptPanel(props: {
         </div>
     );
 }
-
