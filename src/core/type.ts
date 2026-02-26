@@ -19,6 +19,8 @@ export type MotifStructure = {
     conclusion?: string;
 };
 
+export type AppLocale = "zh-CN" | "en-US";
+
 export type MotifEvidence = {
     id?: string;
     quote: string;
@@ -98,11 +100,13 @@ export type ConversationSummary = {
     conversationId: string;
     title: string;
     updatedAt: string;
+    locale?: AppLocale;
 };
 
 export type ConversationDetail = {
     conversationId: string;
     title: string;
+    locale?: AppLocale;
     systemPrompt: string;
     graph: CDG;
     concepts?: ConceptItem[];
@@ -117,6 +121,7 @@ export type ConversationCreateResponse = ConversationDetail;
 
 export type GraphSaveResponse = {
     conversationId: string;
+    locale?: AppLocale;
     graph: CDG;
     concepts?: ConceptItem[];
     motifs?: ConceptMotif[];
@@ -131,6 +136,7 @@ export type GraphSaveResponse = {
 
 export type ConceptSaveResponse = {
     conversationId: string;
+    locale?: AppLocale;
     graph: CDG;
     concepts: ConceptItem[];
     motifs?: ConceptMotif[];
@@ -190,6 +196,7 @@ export type TurnStreamErrorData = {
 };
 
 export type FlowNodeData = {
+    locale?: AppLocale;
     shortLabel: string;
     fullLabel: string;
     meta: string;
@@ -284,6 +291,12 @@ export type ConceptItem = {
 export type ConceptMotifType = "pair" | "triad";
 export type MotifLifecycleStatus = "active" | "uncertain" | "deprecated" | "disabled" | "cancelled";
 export type MotifChangeState = "new" | "updated" | "unchanged";
+export type MotifCausalOperator =
+    | "direct_causation"
+    | "mediated_causation"
+    | "confounding"
+    | "intervention"
+    | "contradiction";
 
 export type ConceptMotif = {
     id: string;
@@ -302,6 +315,17 @@ export type ConceptMotif = {
     resolved?: boolean;
     resolvedAt?: string;
     resolvedBy?: "user" | "system";
+    causalOperator?: MotifCausalOperator;
+    causalFormula?: string;
+    dependencyClass?: EdgeType;
+    history?: Array<{
+        at: string;
+        by: "system" | "user";
+        action: "status_changed" | "edited" | "resolved";
+        from?: MotifLifecycleStatus;
+        to?: MotifLifecycleStatus;
+        reason?: string;
+    }>;
     novelty: MotifChangeState;
     updatedAt: string;
 };
@@ -323,6 +347,9 @@ export type MotifReasoningNode = {
     motifId: string;
     title: string;
     relation: EdgeType;
+    dependencyClass?: EdgeType;
+    causalOperator?: MotifCausalOperator;
+    causalFormula?: string;
     motifType: ConceptMotifType;
     status: MotifLifecycleStatus;
     confidence: number;

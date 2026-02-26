@@ -1,21 +1,24 @@
 import React from "react";
-import type { CDGEdge, CDGNode, EdgeType } from "../../core/type";
+import type { AppLocale, CDGEdge, CDGNode, EdgeType } from "../../core/type";
 import { normalize01 } from "./graphDraftUtils";
 
 export function FlowInspector(props: {
+    locale: AppLocale;
     node: CDGNode | null;
     edge: CDGEdge | null;
     onPatchNode: (nodeId: string, patch: Partial<CDGNode>) => void;
     onPatchEdgeType: (edgeId: string, edgeType: EdgeType) => void;
     onDeleteNode: (nodeId: string) => void;
 }) {
-    const { node, edge, onPatchNode, onPatchEdgeType, onDeleteNode } = props;
+    const { node, edge, onPatchNode, onPatchEdgeType, onDeleteNode, locale } = props;
+    const en = locale === "en-US";
+    const tr = (zh: string, enText: string) => (en ? enText : zh);
 
     if (!node && !edge) {
         return (
             <div className="FlowInspector">
-                <div className="FlowInspector__title">编辑面板</div>
-                <div className="FlowInspector__hint">点击节点或边进行编辑</div>
+                <div className="FlowInspector__title">{tr("编辑面板", "Editor")}</div>
+                <div className="FlowInspector__hint">{tr("点击节点或边进行编辑", "Click a node or edge to edit")}</div>
             </div>
         );
     }
@@ -23,18 +26,18 @@ export function FlowInspector(props: {
     if (edge && !node) {
         return (
             <div className="FlowInspector">
-                <div className="FlowInspector__title">编辑边</div>
+                <div className="FlowInspector__title">{tr("编辑边", "Edit Edge")}</div>
                 <label className="FlowInspector__fieldLabel">
-                    边类型
+                    {tr("边类型", "Edge Type")}
                     <select
                         className="FlowInspector__select"
                         value={edge.type}
                         onChange={(e) => onPatchEdgeType(edge.id, e.target.value as EdgeType)}
                     >
-                        <option value="enable">enable</option>
-                        <option value="constraint">constraint</option>
-                        <option value="determine">determine</option>
-                        <option value="conflicts_with">conflicts_with</option>
+                        <option value="enable">enable (direct / mediated)</option>
+                        <option value="constraint">constraint (confounding)</option>
+                        <option value="determine">determine (intervention)</option>
+                        <option value="conflicts_with">conflicts_with (contradiction)</option>
                     </select>
                 </label>
             </div>
@@ -50,21 +53,21 @@ export function FlowInspector(props: {
         : 0.68;
 
     return (
-        <div className="FlowInspector">
-            <div className="FlowInspector__head">
-                <div className="FlowInspector__title">编辑节点</div>
+            <div className="FlowInspector">
+                <div className="FlowInspector__head">
+                <div className="FlowInspector__title">{tr("编辑节点", "Edit Node")}</div>
                 <button
                     type="button"
                     className="Btn FlowToolbar__btn FlowToolbar__btnDanger"
                     onClick={() => onDeleteNode(current.id)}
-                    title="删除该节点并重连上下游"
+                    title={tr("删除该节点并重连上下游", "Delete node and reconnect parent/children")}
                 >
-                    删除当前节点
+                    {tr("删除当前节点", "Delete Node")}
                 </button>
             </div>
 
             <label className="FlowInspector__fieldLabel">
-                标题 / Statement
+                {tr("标题 / Statement", "Title / Statement")}
                 <textarea
                     className="FlowInspector__editor"
                     value={current.statement || ""}
@@ -74,7 +77,7 @@ export function FlowInspector(props: {
 
             <div className="FlowInspector__fieldGrid">
                 <label className="FlowInspector__fieldLabel">
-                    类型
+                    {tr("类型", "Type")}
                     <select
                         className="FlowInspector__select"
                         value={current.type}
@@ -89,7 +92,7 @@ export function FlowInspector(props: {
                     </select>
                 </label>
                 <label className="FlowInspector__fieldLabel">
-                    层级
+                    {tr("层级", "Layer")}
                     <select
                         className="FlowInspector__select"
                         value={current.layer || ""}
@@ -108,7 +111,7 @@ export function FlowInspector(props: {
 
             <div className="FlowInspector__fieldGrid">
                 <label className="FlowInspector__fieldLabel">
-                    状态
+                    {tr("状态", "Status")}
                     <select
                         className="FlowInspector__select"
                         value={current.status || "proposed"}
@@ -121,7 +124,7 @@ export function FlowInspector(props: {
                     </select>
                 </label>
                 <label className="FlowInspector__fieldLabel">
-                    强度
+                    {tr("强度", "Strength")}
                     <select
                         className="FlowInspector__select"
                         value={current.strength || ""}
@@ -138,7 +141,7 @@ export function FlowInspector(props: {
 
             <div className="FlowInspector__fieldGrid">
                 <label className="FlowInspector__fieldLabel">
-                    严重度
+                    {tr("严重度", "Severity")}
                     <select
                         className="FlowInspector__select"
                         value={current.severity || ""}
@@ -159,12 +162,12 @@ export function FlowInspector(props: {
                         checked={!!current.locked}
                         onChange={(e) => onPatchNode(current.id, { locked: e.target.checked })}
                     />
-                    锁定节点
+                    {tr("锁定节点", "Lock node")}
                 </label>
             </div>
 
             <label className="FlowInspector__sliderLabel">
-                重要性：{Math.round(normalize01(importanceValue, 0.68) * 100)}%
+                {tr("重要性", "Importance")}: {Math.round(normalize01(importanceValue, 0.68) * 100)}%
                 <input
                     type="range"
                     min={0.35}
@@ -176,7 +179,7 @@ export function FlowInspector(props: {
             </label>
 
             <label className="FlowInspector__sliderLabel">
-                置信度：{Math.round(normalize01(confidenceValue, 0.68) * 100)}%
+                {tr("置信度", "Confidence")}: {Math.round(normalize01(confidenceValue, 0.68) * 100)}%
                 <input
                     type="range"
                     min={0.2}

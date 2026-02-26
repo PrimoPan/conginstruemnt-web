@@ -62,6 +62,7 @@ npm run build
 - 本地实验多后端时，配置 `REACT_APP_API_BASE_URLS`。
 - 可通过 URL 查询参数临时切换：`?apiBase=https://your-backend`（会写入 `localStorage`，键名 `cg.apiBase`）。
 - 可通过 `?apiBase=auto` 清除本地缓存并恢复自动解析。
+- 前端语言偏好会写入 `localStorage`（键名 `ci_locale`），新建会话时会提交 `locale`（`zh-CN | en-US`）。
 - 前端会自动尝试 `当前页面主机:3001`，便于本地 `:3000` 和服务器 `:6688` 场景直接监听同主机后端 `:3001`。
 
 本地示例：
@@ -76,7 +77,7 @@ REACT_APP_API_BASE_URLS=http://127.0.0.1:3001,http://43.138.212.17:3001
 
 页面由三部分组成：
 
-1. 顶栏：用户名输入、登录、新建对话、导出旅行计划 PDF、会话 ID 与图版本。
+1. 顶栏：用户名输入、登录、新建对话、导出旅行计划 PDF、会话 ID 与图版本；支持 `中文 / EN` 一键切换。
 2. 左侧：聊天区（独立滚动，输入区固定底部）。
 3. 中间：Concept 区（双 Tab：Concept / Motif）。
 4. 右侧：双画布区（`Concept Graph` 可编辑 + `Motif Reasoning` 推理可视化）。
@@ -119,7 +120,11 @@ REACT_APP_API_BASE_URLS=http://127.0.0.1:3001,http://43.138.212.17:3001
 - `GET /api/conversations/:id/turns`
 - `POST /api/conversations/:id/turn`
 - `POST /api/conversations/:id/turn/stream`（SSE）
-- `GET /api/conversations/:id/travel-plan/export.pdf`（下载中文旅行计划 PDF）
+- `GET /api/conversations/:id/travel-plan/export.pdf`（按会话 locale 下载中/英文旅行计划 PDF）
+
+说明：
+- `POST /api/conversations` 请求体为 `{ title, locale }`，`locale` 为 `zh-CN | en-US`。
+- 前端加载会话详情后会采用后端返回的 `locale`，保证会话语言与系统提示一致。
 
 SSE 事件：
 

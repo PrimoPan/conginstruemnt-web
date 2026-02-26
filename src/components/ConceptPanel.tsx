@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import type { ConceptItem, ConceptMotif } from "../core/type";
+import type { AppLocale, ConceptItem, ConceptMotif } from "../core/type";
 
 function clamp01(v: any, fallback = 0.7) {
     const n = Number(v);
@@ -12,6 +12,10 @@ function cleanText(input: any, max = 120) {
         .replace(/\s+/g, " ")
         .trim()
         .slice(0, max);
+}
+
+function tr(locale: AppLocale, zh: string, en: string) {
+    return locale === "en-US" ? en : zh;
 }
 
 function uniq(arr: string[], max = 24): string[] {
@@ -27,23 +31,23 @@ function uniq(arr: string[], max = 24): string[] {
     return out;
 }
 
-function kindLabel(kind: ConceptItem["kind"]) {
-    if (kind === "intent") return "Intent";
-    if (kind === "requirement") return "Requirement";
-    if (kind === "preference") return "Preference";
-    if (kind === "risk") return "Risk";
-    if (kind === "belief") return "Belief";
-    if (kind === "fact") return "Fact";
-    if (kind === "question") return "Question";
-    return "Other";
+function kindLabel(locale: AppLocale, kind: ConceptItem["kind"]) {
+    if (kind === "intent") return tr(locale, "意图", "Intent");
+    if (kind === "requirement") return tr(locale, "需求", "Requirement");
+    if (kind === "preference") return tr(locale, "偏好", "Preference");
+    if (kind === "risk") return tr(locale, "风险", "Risk");
+    if (kind === "belief") return tr(locale, "信念", "Belief");
+    if (kind === "fact") return tr(locale, "事实", "Fact");
+    if (kind === "question") return tr(locale, "待确认", "Question");
+    return tr(locale, "其他", "Other");
 }
 
-function motifStatusLabel(status: ConceptMotif["status"]) {
-    if (status === "active") return "active";
-    if (status === "uncertain") return "uncertain";
-    if (status === "deprecated") return "deprecated";
-    if (status === "disabled") return "disabled";
-    return "cancelled";
+function motifStatusLabel(locale: AppLocale, status: ConceptMotif["status"]) {
+    if (status === "active") return tr(locale, "active", "active");
+    if (status === "uncertain") return tr(locale, "uncertain", "uncertain");
+    if (status === "deprecated") return tr(locale, "deprecated", "deprecated");
+    if (status === "disabled") return tr(locale, "disabled", "disabled");
+    return tr(locale, "cancelled", "cancelled");
 }
 
 function motifStatusIcon(status: ConceptMotif["status"]) {
@@ -75,9 +79,26 @@ function motifPattern(motif: ConceptMotif, conceptTitles: string[]) {
     return `${sourceLabels.join(" + ")} -> ${targetLabel} (${cleanText(targetTitle, 26)})`;
 }
 
+function dependencyLabel(locale: AppLocale, relation: ConceptMotif["relation"]) {
+    if (relation === "enable") return tr(locale, "Enable（直接/中介因果）", "Enable (Direct/Mediated)");
+    if (relation === "constraint") return tr(locale, "Constraint（混杂）", "Constraint (Confounding)");
+    if (relation === "determine") return tr(locale, "Determine（干预）", "Determine (Intervention)");
+    return tr(locale, "Conflict（矛盾）", "Conflict (Contradiction)");
+}
+
+function causalOperatorLabel(locale: AppLocale, op?: ConceptMotif["causalOperator"]) {
+    if (op === "direct_causation") return tr(locale, "直接因果", "Direct causation");
+    if (op === "mediated_causation") return tr(locale, "中介因果", "Mediated causation");
+    if (op === "confounding") return tr(locale, "混杂", "Confounding");
+    if (op === "intervention") return tr(locale, "干预（do-operator）", "Intervention (do-operator)");
+    if (op === "contradiction") return tr(locale, "矛盾", "Contradiction");
+    return tr(locale, "未指定", "Unspecified");
+}
+
 type TabKey = "concept" | "motif";
 
 export function ConceptPanel(props: {
+    locale: AppLocale;
     concepts: ConceptItem[];
     motifs: ConceptMotif[];
     activeConceptId?: string;
@@ -92,6 +113,7 @@ export function ConceptPanel(props: {
     onPatchMotif: (motifId: string, patch: Partial<ConceptMotif>) => void;
 }) {
     const {
+        locale,
         concepts,
         motifs,
         activeConceptId,
@@ -119,6 +141,7 @@ export function ConceptPanel(props: {
     const motifList = useMemo(
         () =>
             (motifs || [])
+                .filter((m) => m.status !== "cancelled")
                 .slice()
                 .sort((a, b) => {
                     const rank = (s: ConceptMotif["status"]) =>
@@ -137,7 +160,7 @@ export function ConceptPanel(props: {
         <div className="Panel ConceptPanel">
             <div className="PanelHeader ConceptPanel__header">
                 <div className="ConceptPanel__title">Concept · Motif</div>
-                {saving ? <span className="FlowStatusTag">保存中</span> : null}
+                {saving ? <span className="FlowStatusTag">{tr(locale, "保存中", "Saving")}</span> : null}
             </div>
 
             <div className="ConceptPanel__tabs ConceptPanel__tabs--compact" role="tablist" aria-label="concept motif tabs">
@@ -159,7 +182,9 @@ export function ConceptPanel(props: {
 
             <div className="ConceptPanel__list">
                 {tab === "concept" && !concepts.length ? (
-                    <div className="ConceptPanel__empty">当前还没有可用 concept，继续对话后会自动生成。</div>
+                    <div className="ConceptPanel__empty">
+                        {tr(locale, "当前还没有可用 concept，继续对话后会自动生成。", "No concepts yet. Continue chatting to generate them.")}
+                    </div>
                 ) : null}
 
                 {tab === "concept"
@@ -189,13 +214,15 @@ export function ConceptPanel(props: {
                                 <div className="ConceptCard__head">
                                     <div className="ConceptCard__titleWrap">
                                         <div className="ConceptCard__title">{c.title}</div>
-                                        <div className="ConceptCard__kind">{kindLabel(c.kind)}</div>
+                                        <div className="ConceptCard__kind">{kindLabel(locale, c.kind)}</div>
                                     </div>
                                     <div className="ConceptCard__actions">
                                         <button
                                             type="button"
                                             className="ConceptCard__iconBtn"
-                                            title={c.locked ? "解锁 Concept（允许关联节点自动更新）" : "锁定 Concept（保护关联节点）"}
+                                            title={c.locked
+                                                ? tr(locale, "解锁 Concept（允许关联节点自动更新）", "Unlock concept (allow auto updates)")
+                                                : tr(locale, "锁定 Concept（保护关联节点）", "Lock concept (protect linked nodes)")}
                                             onClick={(e) => {
                                                 e.stopPropagation();
                                                 onPatchConcept(c.id, { locked: !c.locked, updatedAt: new Date().toISOString() });
@@ -206,7 +233,9 @@ export function ConceptPanel(props: {
                                         <button
                                             type="button"
                                             className="ConceptCard__iconBtn"
-                                            title={c.paused ? "启用 Concept（恢复关联节点）" : "暂停 Concept（临时停用并置灰关联节点）"}
+                                            title={c.paused
+                                                ? tr(locale, "启用 Concept（恢复关联节点）", "Enable concept (restore linked nodes)")
+                                                : tr(locale, "暂停 Concept（临时停用并置灰关联节点）", "Pause concept (temporarily mute linked nodes)")}
                                             onClick={(e) => {
                                                 e.stopPropagation();
                                                 onPatchConcept(c.id, { paused: !c.paused, updatedAt: new Date().toISOString() });
@@ -217,7 +246,7 @@ export function ConceptPanel(props: {
                                         <button
                                             type="button"
                                             className="ConceptCard__iconBtn"
-                                            title="编辑对应节点（与右侧节点编辑逻辑一致）"
+                                            title={tr(locale, "编辑对应节点（与右侧节点编辑逻辑一致）", "Edit linked node (same logic as right editor)")}
                                             onClick={(e) => {
                                                 e.stopPropagation();
                                                 onSelect(c.id);
@@ -230,11 +259,15 @@ export function ConceptPanel(props: {
                                     </div>
                                 </div>
 
-                                <div className="ConceptCard__desc">{c.description || "暂无描述"}</div>
+                                <div className="ConceptCard__desc">{c.description || tr(locale, "暂无描述", "No description")}</div>
                                 <div className="ConceptCard__foot">
                                     <span>{scorePct}%</span>
                                     <span>
-                                        {nodeCount} node · {motifCount} motif
+                                        {nodeCount}
+                                        {tr(locale, " 个节点", " node")}
+                                        {" · "}
+                                        {motifCount}
+                                        {tr(locale, " 个motif", " motif")}
                                     </span>
                                 </div>
                             </div>
@@ -243,12 +276,13 @@ export function ConceptPanel(props: {
                     : null}
 
                 {tab === "motif" && !motifList.length ? (
-                    <div className="ConceptPanel__empty">当前还没有可用 motif。</div>
+                    <div className="ConceptPanel__empty">{tr(locale, "当前还没有可用 motif。", "No motifs yet.")}</div>
                 ) : null}
 
                 {tab === "motif"
                     ? motifList.map((m) => {
                         const active = m.id === activeMotifId;
+                        const isUpdatedThisTurn = m.novelty === "new" || m.novelty === "updated";
                         const confidencePct = Math.round(clamp01(m.confidence, 0.72) * 100);
                         const barsOn = Math.max(1, Math.round((confidencePct / 100) * 4));
                         const conceptTitles = (m.conceptIds || []).map((id) => cleanText(conceptById.get(id)?.title, 60) || id);
@@ -259,11 +293,14 @@ export function ConceptPanel(props: {
                             6
                         );
                         const pattern = motifPattern(m, conceptTitles);
+                        const causalFormula = cleanText(m.causalFormula, 120) || pattern;
                         const isEditing = editingMotifId === m.id;
                         return (
                             <div
                                 key={m.id}
-                                className={`ConceptCard ConceptCard--motifLite ${active ? "is-selected" : ""}`}
+                                className={`ConceptCard ConceptCard--motifLite status-${m.status} ${
+                                    active ? "is-selected" : ""
+                                } ${isUpdatedThisTurn ? "is-updated" : ""}`}
                                 role="button"
                                 tabIndex={0}
                                 onClick={() => {
@@ -282,24 +319,17 @@ export function ConceptPanel(props: {
                                     <span className="MotifCard__status">{motifStatusIcon(m.status)}</span>
                                     <div className="MotifCard__titleWrap">
                                         <div className="ConceptCard__title">{m.title}</div>
-                                        <div className="ConceptCard__kind">{motifStatusLabel(m.status)}</div>
+                                        <div className="ConceptCard__kind">
+                                            <span className={`MotifStatusBadge status-${m.status}`}>{motifStatusLabel(locale, m.status)}</span>
+                                        </div>
                                     </div>
                                     <div className="ConceptCard__actions">
                                         <button
                                             type="button"
                                             className="ConceptCard__iconBtn"
-                                            title="查看该 motif 在右侧推理画布中的位置"
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                onSelectMotif(m.id);
-                                            }}
-                                        >
-                                            👁
-                                        </button>
-                                        <button
-                                            type="button"
-                                            className="ConceptCard__iconBtn"
-                                            title={m.resolved ? "解除锁定（允许系统继续重算该 motif）" : "锁定 motif（保持当前状态）"}
+                                            title={m.resolved
+                                                ? tr(locale, "解除锁定（允许系统继续重算该 motif）", "Unlock motif (allow recalculation)")
+                                                : tr(locale, "锁定 motif（保持当前状态）", "Lock motif (keep current state)")}
                                             onClick={(e) => {
                                                 e.stopPropagation();
                                                 onPatchMotif(m.id, {
@@ -317,7 +347,29 @@ export function ConceptPanel(props: {
                                         <button
                                             type="button"
                                             className="ConceptCard__iconBtn"
-                                            title="编辑 motif 标题与说明"
+                                            title={m.status === "disabled"
+                                                ? tr(locale, "启用 motif（恢复参与推理）", "Enable motif (resume reasoning)")
+                                                : tr(locale, "停用 motif（仅暂停，不删除）", "Disable motif (pause only, do not delete)")}
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                const disabling = m.status !== "disabled";
+                                                onPatchMotif(m.id, {
+                                                    status: disabling ? "disabled" : "active",
+                                                    statusReason: disabling ? "user_disabled" : "user_reenabled",
+                                                    resolved: disabling ? true : false,
+                                                    resolvedBy: disabling ? "user" : undefined,
+                                                    resolvedAt: disabling ? new Date().toISOString() : undefined,
+                                                    novelty: "updated",
+                                                    updatedAt: new Date().toISOString(),
+                                                });
+                                            }}
+                                        >
+                                            {m.status === "disabled" ? "▶" : "⏸"}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className="ConceptCard__iconBtn"
+                                            title={tr(locale, "编辑 motif 标题与说明", "Edit motif title and description")}
                                             onClick={(e) => {
                                                 e.stopPropagation();
                                                 setEditingMotifId(m.id);
@@ -330,8 +382,11 @@ export function ConceptPanel(props: {
                                     </div>
                                 </div>
 
-                                <div className="ConceptCard__desc">{m.description || "暂无说明"}</div>
-                                <div className="MotifCard__pattern">{pattern}</div>
+                                <div className="ConceptCard__desc">{m.description || tr(locale, "暂无说明", "No description")}</div>
+                                <div className="MotifCard__pattern">
+                                    {dependencyLabel(locale, m.dependencyClass || m.relation)} · {causalOperatorLabel(locale, m.causalOperator)}
+                                </div>
+                                <div className="MotifCard__pattern">{causalFormula}</div>
                                 <div className="MotifCard__concepts">
                                     {conceptTitles.slice(0, 4).map((title, idx) => (
                                         <span key={`${m.id}_c_${idx}`} className="MotifCard__conceptTag">
@@ -348,7 +403,7 @@ export function ConceptPanel(props: {
                                     ))}
                                 </div>
                                 <div className="ConceptCard__foot">
-                                    <span>{refs.length ? refs.join(" ") : "source: n/a"}</span>
+                                    <span>{refs.length ? refs.join(" ") : tr(locale, "来源: n/a", "source: n/a")}</span>
                                     <span>{confidencePct}%</span>
                                 </div>
 
@@ -357,9 +412,9 @@ export function ConceptPanel(props: {
                                         className="ConceptEditor ConceptPanel__editorInline"
                                         onClick={(e) => e.stopPropagation()}
                                     >
-                                        <div className="ConceptEditor__title">编辑 Motif</div>
+                                        <div className="ConceptEditor__title">{tr(locale, "编辑 Motif", "Edit Motif")}</div>
                                         <label className="FlowInspector__fieldLabel">
-                                            标题
+                                            {tr(locale, "标题", "Title")}
                                             <input
                                                 className="FlowInspector__input"
                                                 value={editingMotifTitle}
@@ -367,7 +422,7 @@ export function ConceptPanel(props: {
                                             />
                                         </label>
                                         <label className="FlowInspector__fieldLabel">
-                                            描述
+                                            {tr(locale, "描述", "Description")}
                                             <textarea
                                                 className="FlowInspector__editor"
                                                 value={editingMotifDesc}
@@ -384,7 +439,7 @@ export function ConceptPanel(props: {
                                                     setEditingMotifDesc("");
                                                 }}
                                             >
-                                                取消
+                                                {tr(locale, "取消", "Cancel")}
                                             </button>
                                             <button
                                                 type="button"
@@ -401,7 +456,7 @@ export function ConceptPanel(props: {
                                                     setEditingMotifDesc("");
                                                 }}
                                             >
-                                                保存
+                                                {tr(locale, "保存", "Save")}
                                             </button>
                                         </div>
                                     </div>
@@ -414,13 +469,13 @@ export function ConceptPanel(props: {
 
             {tab === "concept" && selectedConcept ? (
                 <div className="ConceptPanel__footer">
-                    <div className="ConceptPanel__footerTitle">已选中：{selectedConcept.title}</div>
+                    <div className="ConceptPanel__footerTitle">{tr(locale, "已选中：", "Selected: ")}{selectedConcept.title}</div>
                     <div className="ConceptPanel__footerActions">
                         <button type="button" className="Btn FlowToolbar__btn" onClick={() => onEditConceptNode?.(selectedConcept.id)}>
-                            编辑对应节点
+                            {tr(locale, "编辑对应节点", "Edit linked node")}
                         </button>
                         <button type="button" className="Btn FlowToolbar__btn" onClick={onClearSelect}>
-                            清除高亮
+                            {tr(locale, "清除高亮", "Clear highlight")}
                         </button>
                     </div>
                 </div>
@@ -428,10 +483,10 @@ export function ConceptPanel(props: {
 
             {tab === "motif" && selectedMotif ? (
                 <div className="ConceptPanel__footer">
-                    <div className="ConceptPanel__footerTitle">已选中 Motif：{selectedMotif.title}</div>
+                    <div className="ConceptPanel__footerTitle">{tr(locale, "已选中 Motif：", "Selected motif: ")}{selectedMotif.title}</div>
                     <div className="ConceptPanel__footerActions">
                         <button type="button" className="Btn FlowToolbar__btn" onClick={onClearMotifSelect}>
-                            清除高亮
+                            {tr(locale, "清除高亮", "Clear highlight")}
                         </button>
                     </div>
                 </div>

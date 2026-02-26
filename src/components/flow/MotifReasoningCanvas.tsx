@@ -12,6 +12,7 @@ import {
     ReactFlow,
 } from "@xyflow/react";
 import type {
+    AppLocale,
     ConceptItem,
     ConceptMotif,
     MotifLink,
@@ -22,10 +23,14 @@ import type {
 
 type MotifFlowData = {
     motifId: string;
+    locale?: AppLocale;
     title: string;
     status: ConceptMotif["status"];
     confidence: number;
     relation: ConceptMotif["relation"];
+    dependencyClass?: ConceptMotif["dependencyClass"];
+    causalOperator?: ConceptMotif["causalOperator"];
+    causalFormula?: string;
     motifType: ConceptMotif["motifType"];
     pattern: string;
     conceptLabels: string[];
@@ -38,6 +43,10 @@ function cleanText(input: any, max = 160): string {
         .replace(/\s+/g, " ")
         .trim()
         .slice(0, max);
+}
+
+function tr(locale: AppLocale | undefined, zh: string, en: string): string {
+    return locale === "en-US" ? en : zh;
 }
 
 function clamp01(v: any, fallback = 0.7) {
@@ -99,6 +108,9 @@ function buildFallbackView(params: {
             motifId: m.id,
             title: cleanText(m.title, 160) || cleanText(m.templateKey, 120) || "motif",
             relation: m.relation,
+            dependencyClass: m.dependencyClass || m.relation,
+            causalOperator: m.causalOperator,
+            causalFormula: cleanText(m.causalFormula, 120) || motifPattern(m),
             motifType: m.motifType,
             status: m.status,
             confidence: clamp01(m.confidence, 0.72),
@@ -157,12 +169,12 @@ function nodeColor(status: ConceptMotif["status"]) {
     return "#2563eb";
 }
 
-function statusLabel(status: ConceptMotif["status"]) {
-    if (status === "active") return "active";
-    if (status === "uncertain") return "uncertain";
-    if (status === "deprecated") return "deprecated";
-    if (status === "disabled") return "disabled";
-    return "cancelled";
+function statusLabel(status: ConceptMotif["status"], locale?: AppLocale) {
+    if (status === "active") return tr(locale, "active", "active");
+    if (status === "uncertain") return tr(locale, "uncertain", "uncertain");
+    if (status === "deprecated") return tr(locale, "deprecated", "deprecated");
+    if (status === "disabled") return tr(locale, "disabled", "disabled");
+    return tr(locale, "cancelled", "cancelled");
 }
 
 function statusIcon(status: ConceptMotif["status"]) {
@@ -173,14 +185,31 @@ function statusIcon(status: ConceptMotif["status"]) {
     return "•";
 }
 
-function relationHint(relation: ConceptMotif["relation"]) {
-    if (relation === "constraint") return "constraint";
-    if (relation === "determine") return "determine";
-    if (relation === "conflicts_with") return "conflict";
-    return "enable";
+function dependencyLabel(relation: ConceptMotif["relation"] | undefined, locale?: AppLocale) {
+    if (relation === "enable") return tr(locale, "Enable（直接/中介因果）", "Enable (Direct/Mediated)");
+    if (relation === "constraint") return tr(locale, "Constraint（混杂）", "Constraint (Confounding)");
+    if (relation === "determine") return tr(locale, "Determine（干预）", "Determine (Intervention)");
+    return tr(locale, "Conflict（矛盾）", "Conflict (Contradiction)");
 }
 
-function layoutReasoningGraph(view: MotifReasoningView): {
+function causalOperatorLabel(op: ConceptMotif["causalOperator"] | undefined, locale?: AppLocale) {
+    if (op === "direct_causation") return tr(locale, "直接因果", "Direct causation");
+    if (op === "mediated_causation") return tr(locale, "中介因果", "Mediated causation");
+    if (op === "confounding") return tr(locale, "混杂", "Confounding");
+    if (op === "intervention") return tr(locale, "干预（do-operator）", "Intervention (do-operator)");
+    if (op === "contradiction") return tr(locale, "矛盾", "Contradiction");
+    return tr(locale, "未指定", "Unspecified");
+}
+
+function edgeTypeLabel(type: MotifLink["type"], locale?: AppLocale) {
+    if (type === "supports") return tr(locale, "supports", "supports");
+    if (type === "depends_on") return tr(locale, "depends_on", "depends_on");
+    if (type === "conflicts") return tr(locale, "conflicts", "conflicts");
+    if (type === "refines") return tr(locale, "refines", "refines");
+    return type;
+}
+
+function layoutReasoningGraph(view: MotifReasoningView, locale?: AppLocale): {
     nodes: Node<MotifFlowData>[];
     edges: Edge[];
 } {
@@ -264,10 +293,14 @@ function layoutReasoningGraph(view: MotifReasoningView): {
                 },
                 data: {
                     motifId: n.motifId,
+                    locale,
                     title: n.title,
                     status: n.status,
                     confidence,
                     relation: n.relation,
+                    dependencyClass: n.dependencyClass || n.relation,
+                    causalOperator: n.causalOperator,
+                    causalFormula: cleanText(n.causalFormula, 120) || n.pattern,
                     motifType: n.motifType,
                     pattern: n.pattern,
                     conceptLabels,
@@ -286,7 +319,7 @@ function layoutReasoningGraph(view: MotifReasoningView): {
                 source: e.from,
                 target: e.to,
                 type: "smoothstep",
-                label: e.type,
+                label: edgeTypeLabel(e.type, locale),
                 style: {
                     stroke: edgeColor(e.type, conf),
                     strokeWidth: 1.1 + conf * 1.8,
@@ -311,6 +344,7 @@ function layoutReasoningGraph(view: MotifReasoningView): {
 const MotifNode = memo(function MotifNode({ data, selected }: NodeProps<Node<MotifFlowData>>) {
     const confidencePct = Math.round(clamp01(data.confidence, 0.72) * 100);
     const activeBars = Math.max(1, Math.round((confidencePct / 100) * 4));
+    const locale = data.locale;
     return (
         <div
             className={`MotifReasoningNode ${selected ? "is-selected" : ""} status-${data.status}`}
@@ -328,9 +362,10 @@ const MotifNode = memo(function MotifNode({ data, selected }: NodeProps<Node<Mot
             </div>
 
             <div className="MotifReasoningNode__meta">
-                {statusLabel(data.status)} · {data.motifType} · {relationHint(data.relation)}
+                {statusLabel(data.status, locale)} · {dependencyLabel(data.dependencyClass || data.relation, locale)} ·{" "}
+                {causalOperatorLabel(data.causalOperator, locale)}
             </div>
-            <div className="MotifReasoningNode__pattern">{data.pattern}</div>
+            <div className="MotifReasoningNode__pattern">{data.causalFormula || data.pattern}</div>
 
             <div className="MotifReasoningNode__concepts">
                 {data.conceptLabels.slice(0, 4).map((x) => (
@@ -352,7 +387,7 @@ const MotifNode = memo(function MotifNode({ data, selected }: NodeProps<Node<Mot
                 ))}
             </div>
             <div className="MotifReasoningNode__refs">
-                {data.sourceRefs.length ? data.sourceRefs.join(" ") : "source: n/a"}
+                {data.sourceRefs.length ? data.sourceRefs.join(" ") : tr(locale, "来源: n/a", "source: n/a")}
             </div>
         </div>
     );
@@ -361,6 +396,7 @@ const MotifNode = memo(function MotifNode({ data, selected }: NodeProps<Node<Mot
 const nodeTypes = { motifNode: MotifNode };
 
 export function MotifReasoningCanvas(props: {
+    locale?: AppLocale;
     motifs: ConceptMotif[];
     motifLinks: MotifLink[];
     concepts: ConceptItem[];
@@ -369,6 +405,7 @@ export function MotifReasoningCanvas(props: {
     onSelectMotif?: (motifId: string) => void;
     onSelectConcept?: (conceptId: string) => void;
 }) {
+    const en = props.locale === "en-US";
     const resolvedView = useMemo(() => {
         const serverView = props.reasoningView;
         const hasServerView = Array.isArray(serverView?.nodes) && (serverView?.nodes?.length || 0) > 0;
@@ -380,7 +417,7 @@ export function MotifReasoningCanvas(props: {
         });
     }, [props.reasoningView, props.motifs, props.motifLinks, props.concepts]);
 
-    const { nodes, edges } = useMemo(() => layoutReasoningGraph(resolvedView), [resolvedView]);
+    const { nodes, edges } = useMemo(() => layoutReasoningGraph(resolvedView, props.locale), [resolvedView, props.locale]);
     const renderedNodes = useMemo(
         () =>
             nodes.map((n) => ({
@@ -394,7 +431,9 @@ export function MotifReasoningCanvas(props: {
         <div className="MotifReasoningCanvas">
             {!nodes.length ? (
                 <div className="MotifReasoningCanvas__empty">
-                    当前还没有可用 motif 推理结构，继续对话后会自动生成。
+                    {en
+                        ? "No motif reasoning structure yet. Continue the conversation to generate one."
+                        : "当前还没有可用 motif 推理结构，继续对话后会自动生成。"}
                 </div>
             ) : null}
             <ReactFlow

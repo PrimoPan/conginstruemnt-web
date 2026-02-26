@@ -1,5 +1,6 @@
 // src/api/client.ts
 import type {
+    AppLocale,
     ConceptItem,
     ConceptMotif,
     MotifLink,
@@ -383,10 +384,10 @@ export const api = {
     listConversations: (token: string) =>
         http<ConversationSummary[]>("/api/conversations", {}, token),
 
-    createConversation: (token: string, title: string) =>
+    createConversation: (token: string, title: string, locale: AppLocale) =>
         http<ConversationCreateResponse>(
             "/api/conversations",
-            { method: "POST", body: JSON.stringify({ title }) },
+            { method: "POST", body: JSON.stringify({ title, locale }) },
             token
         ),
 

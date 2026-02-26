@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "@xyflow/react/dist/style.css";
 import type {
+    AppLocale,
     CDG,
     CDGNode,
     ConceptItem,
@@ -74,6 +75,7 @@ function mergeIncomingGraphWithLocalUi(incoming: CDG, local: CDG): CDG {
 }
 
 export function FlowPanel(props: {
+    locale: AppLocale;
     graph: CDG;
     concepts?: ConceptItem[];
     motifs?: ConceptMotif[];
@@ -96,6 +98,7 @@ export function FlowPanel(props: {
     savingGraph?: boolean;
 }) {
     const {
+        locale,
         graph,
         concepts,
         motifs,
@@ -114,6 +117,8 @@ export function FlowPanel(props: {
         onSaveGraph,
         savingGraph,
     } = props;
+    const en = locale === "en-US";
+    const tr = (zh: string, enText: string) => (en ? enText : zh);
     const [canvasView, setCanvasView] = useState<"concept" | "motif">("concept");
     const [draftGraph, setDraftGraph] = useState<CDG>(normalizeGraphClient(graph));
     const [dirty, setDirty] = useState(false);
@@ -230,6 +235,7 @@ export function FlowPanel(props: {
 
     useEffect(() => {
         const flow = cdgToFlow(draftGraph, {
+            locale,
             onNodePatch,
             onImportanceChange,
             activeNodeIds,
@@ -238,7 +244,7 @@ export function FlowPanel(props: {
         });
         setNodes(flow.nodes);
         setEdges(flow.edges);
-    }, [draftGraph, onImportanceChange, onNodePatch, setEdges, setNodes, activeNodeIds, pausedNodeIds, conceptIdsByNodeId]);
+    }, [draftGraph, locale, onImportanceChange, onNodePatch, setEdges, setNodes, activeNodeIds, pausedNodeIds, conceptIdsByNodeId]);
 
     const selectedNode = useMemo(
         () => (draftGraph.nodes || []).find((n) => n.id === selectedNodeId) || null,
@@ -285,7 +291,7 @@ export function FlowPanel(props: {
                 id,
                 type: "fact",
                 layer: "requirement",
-                statement: "新节点：请编辑",
+                statement: en ? "New node: edit me" : "新节点：请编辑",
                 status: "proposed",
                 confidence: 0.72,
                 importance: 0.66,
@@ -305,7 +311,7 @@ export function FlowPanel(props: {
         });
         if (createdId) setSelectedNodeId(createdId);
         setSelectedEdgeId("");
-    }, [nodes, selectedNodeId, updateDraftGraph]);
+    }, [en, nodes, selectedNodeId, updateDraftGraph]);
 
     const onNodeDragStart = useCallback((evt: any, node: any) => {
         dragStartRef.current[node.id] = { x: node.position.x, y: node.position.y };
@@ -362,15 +368,16 @@ export function FlowPanel(props: {
             await Promise.resolve(
                 onSaveGraph(draftGraph, {
                     requestAdvice: true,
-                    advicePrompt:
-                        "用户已手动编辑意图流程图，请把该图视为最新真值，结合已有对话给出下一步可执行建议（先行动方案，再1-2个关键问题）。",
+                    advicePrompt: en
+                        ? "The user manually edited the intent graph. Treat this graph as the latest source of truth and provide executable next-step advice from existing dialogue. Give an action plan first, then ask 1-2 focused follow-up questions."
+                        : "用户已手动编辑意图流程图，请把该图视为最新真值，结合已有对话给出下一步可执行建议（先行动方案，再1-2个关键问题）。",
                 })
             );
             setDirty(false);
         } catch (e: any) {
-            setSaveError(e?.message || "保存失败");
+            setSaveError(e?.message || (en ? "Save failed" : "保存失败"));
         }
-    }, [draftGraph, hasUnsavedChanges, onSaveGraph, savingGraph]);
+    }, [draftGraph, en, hasUnsavedChanges, onSaveGraph, savingGraph]);
 
     return (
         <div className="Panel">
@@ -381,24 +388,25 @@ export function FlowPanel(props: {
                         className={`FlowPanel__headerTab ${canvasView === "concept" ? "is-active" : ""}`}
                         onClick={() => setCanvasView("concept")}
                     >
-                        Concept Graph
+                        {tr("Concept 画布", "Concept Graph")}
                     </button>
                     <button
                         type="button"
                         className={`FlowPanel__headerTab ${canvasView === "motif" ? "is-active" : ""}`}
                         onClick={() => setCanvasView("motif")}
                     >
-                        Motif Reasoning
+                        {tr("Motif 推理", "Motif Reasoning")}
                     </button>
                 </div>
                 {canvasView === "concept" && generatingGraph ? (
-                    <span className="FlowStatusTag">意图分析图生成中</span>
+                    <span className="FlowStatusTag">{tr("意图分析图生成中", "Generating intent graph")}</span>
                 ) : null}
             </div>
             <div className="FlowCanvas">
                 {canvasView === "concept" ? (
                     <>
                         <FlowToolbar
+                            locale={locale}
                             onAddNode={addNode}
                             onSave={saveGraph}
                             canSave={!!onSaveGraph && hasUnsavedChanges}
@@ -408,6 +416,7 @@ export function FlowPanel(props: {
                         />
 
                         <FlowInspector
+                            locale={locale}
                             node={selectedNode}
                             edge={selectedEdge}
                             onPatchNode={onNodePatch}
@@ -443,6 +452,7 @@ export function FlowPanel(props: {
                     </>
                 ) : (
                     <MotifReasoningCanvas
+                        locale={locale}
                         motifs={motifs || []}
                         motifLinks={motifLinks || []}
                         concepts={concepts || []}

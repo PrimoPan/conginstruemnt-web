@@ -1,6 +1,8 @@
 import React from "react";
+import type { AppLocale } from "../../core/type";
 
 export function FlowToolbar(props: {
+    locale: AppLocale;
     onAddNode: () => void;
     onSave: () => void;
     canSave: boolean;
@@ -8,6 +10,8 @@ export function FlowToolbar(props: {
     dirty: boolean;
     generating: boolean;
 }) {
+    const en = props.locale === "en-US";
+    const tr = (zh: string, enText: string) => (en ? enText : zh);
     return (
         <div className="FlowToolbar">
             <div className="FlowToolbar__group">
@@ -15,9 +19,9 @@ export function FlowToolbar(props: {
                     type="button"
                     className="Btn FlowToolbar__btn"
                     onClick={props.onAddNode}
-                    title="新增节点"
+                    title={tr("新增节点", "Add node")}
                 >
-                    + 新增节点
+                    {tr("+ 新增节点", "+ Add Node")}
                 </button>
             </div>
             <div className="FlowToolbar__group">
@@ -27,10 +31,10 @@ export function FlowToolbar(props: {
                     onClick={props.onSave}
                     disabled={!props.canSave || props.saving}
                 >
-                    {props.saving ? "保存中..." : "保存并生成建议"}
+                    {props.saving ? tr("保存中...", "Saving...") : tr("保存并生成建议", "Save and Generate Advice")}
                 </button>
-                {props.dirty ? <span className="FlowToolbar__dirty">未保存</span> : null}
-                {props.generating ? <span className="FlowStatusTag">生成中</span> : null}
+                {props.dirty ? <span className="FlowToolbar__dirty">{tr("未保存", "Unsaved")}</span> : null}
+                {props.generating ? <span className="FlowStatusTag">{tr("生成中", "Generating")}</span> : null}
             </div>
         </div>
     );

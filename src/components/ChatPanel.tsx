@@ -1,6 +1,7 @@
 // src/components/ChatPanel.tsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import type { NodeEvidenceFocus } from "../core/type";
+import type { AppLocale } from "../core/type";
 
 export type Msg = {
     id: string;
@@ -9,14 +10,21 @@ export type Msg = {
 };
 
 export function ChatPanel(props: {
+    locale: AppLocale;
     messages: Msg[];
     disabled: boolean;
     busy: boolean;
     onSend: (text: string) => void;
     evidenceFocus?: NodeEvidenceFocus | null;
 }) {
+    const en = props.locale === "en-US";
+    const tr = (zh: string, enText: string) => (en ? enText : zh);
     const [input, setInput] = useState("");
     const bodyRef = useRef<HTMLDivElement | null>(null);
+    const lastMessageText = useMemo(
+        () => (props.messages.length ? props.messages[props.messages.length - 1].text : ""),
+        [props.messages]
+    );
 
     const canSend = useMemo(() => !props.disabled && !props.busy, [props.disabled, props.busy]);
 
@@ -25,10 +33,7 @@ export function ChatPanel(props: {
         const el = bodyRef.current;
         if (!el) return;
         el.scrollTop = el.scrollHeight;
-    }, [
-        props.messages.length,
-        props.messages.length ? props.messages[props.messages.length - 1].text : "",
-    ]);
+    }, [props.messages.length, lastMessageText]);
 
     const send = () => {
         const t = input.trim();
@@ -116,7 +121,7 @@ export function ChatPanel(props: {
 
     return (
         <div className="Panel">
-            <div className="PanelHeader">对话</div>
+            <div className="PanelHeader">{tr("对话", "Chat")}</div>
 
             <div className="ChatBody" ref={bodyRef}>
                 {props.messages.map((m) => (
@@ -131,7 +136,7 @@ export function ChatPanel(props: {
 
                 {props.busy && (
                     <div className="ChatHint" aria-live="polite">
-                        正在生成…
+                        {tr("正在生成…", "Generating...")}
                     </div>
                 )}
             </div>
@@ -141,7 +146,11 @@ export function ChatPanel(props: {
                     className="Input Input--grow"
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
-                    placeholder={props.disabled ? "请先登录并新建对话…" : "输入一句话（Enter 发送）"}
+                    placeholder={
+                        props.disabled
+                            ? tr("请先登录并新建对话…", "Log in and create a new conversation first...")
+                            : tr("输入一句话（Enter 发送）", "Type a message (Enter to send)")
+                    }
                     disabled={!canSend}
                     onKeyDown={(e) => {
                         // 中文输入法合成期间不要发送
@@ -157,7 +166,7 @@ export function ChatPanel(props: {
                 />
 
                 <button className="Btn" disabled={!canSend || input.trim().length === 0} onClick={send}>
-                    发送
+                    {tr("发送", "Send")}
                 </button>
             </div>
         </div>

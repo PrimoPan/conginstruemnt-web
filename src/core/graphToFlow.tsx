@@ -1,15 +1,17 @@
 import type { Edge, Node } from "@xyflow/react";
 import { MarkerType } from "@xyflow/react";
-import type { CDG, CDGEdge, CDGNode, FlowNodeData, NodeLayer, Severity } from "./type";
+import type { AppLocale, CDG, CDGEdge, CDGNode, FlowNodeData, NodeLayer, Severity } from "./type";
 
-const TYPE_LABEL: Record<string, string> = {
-    goal: "目标",
-    constraint: "约束",
-    preference: "偏好",
-    belief: "判断",
-    fact: "事实",
-    question: "待确认",
-};
+function typeLabel(type: string, locale: AppLocale): string {
+    const en = locale === "en-US";
+    if (type === "goal") return en ? "Goal" : "目标";
+    if (type === "constraint") return en ? "Constraint" : "约束";
+    if (type === "preference") return en ? "Preference" : "偏好";
+    if (type === "belief") return en ? "Belief" : "判断";
+    if (type === "fact") return en ? "Fact" : "事实";
+    if (type === "question") return en ? "Question" : "待确认";
+    return type;
+}
 
 const TYPE_ORDER: Record<string, number> = {
     goal: 0,
@@ -20,12 +22,14 @@ const TYPE_ORDER: Record<string, number> = {
     question: 5,
 };
 
-const LAYER_LABEL: Record<NodeLayer, string> = {
-    intent: "Intent",
-    requirement: "Requirement",
-    preference: "Preference",
-    risk: "Risk",
-};
+function layerLabel(layer: NodeLayer, locale: AppLocale): string {
+    const en = locale === "en-US";
+    if (layer === "intent") return en ? "Intent" : "意图层";
+    if (layer === "requirement") return en ? "Requirement" : "需求层";
+    if (layer === "preference") return en ? "Preference" : "偏好层";
+    if (layer === "risk") return en ? "Risk" : "风险层";
+    return layer;
+}
 
 function slotFamily(slot: string | null): string {
     if (!slot) return "none";
@@ -36,6 +40,9 @@ function slotFamily(slot: string | null): string {
     if (slot === "slot:duration" || slot === "slot:duration_total") return "duration";
     if (slot === "slot:people") return "people";
     if (slot === "slot:budget") return "budget";
+    if (slot === "slot:budget_spent") return "budget";
+    if (slot === "slot:budget_remaining") return "budget";
+    if (slot === "slot:budget_pending") return "budget";
     if (slot === "slot:lodging") return "lodging";
     if (slot === "slot:scenic_preference") return "preference_slot";
     if (slot === "slot:health") return "health";
@@ -70,7 +77,7 @@ type SemanticLane =
 function cleanStatement(input: string) {
     return String(input ?? "")
         .replace(/\s+/g, " ")
-        .replace(/^(用户任务|任务|用户补充)[:：]\s*/i, "")
+        .replace(/^(用户任务|任务|用户补充|user task|task|user note|user update)[:：]\s*/i, "")
         .trim();
 }
 
@@ -104,9 +111,9 @@ function clamp01(x: any, fallback = 0.68) {
     return Math.max(0, Math.min(1, n));
 }
 
-function nodeMeta(node: CDGNode) {
-    const parts = [TYPE_LABEL[node.type] || node.type];
-    if (node.layer) parts.push(LAYER_LABEL[node.layer] || node.layer);
+function nodeMeta(node: CDGNode, locale: AppLocale) {
+    const parts = [typeLabel(node.type, locale)];
+    if (node.layer) parts.push(layerLabel(node.layer, locale));
     if (node.strength) parts.push(node.strength);
     if (typeof node.confidence === "number") parts.push(`c=${node.confidence.toFixed(2)}`);
     if (typeof node.importance === "number") parts.push(`i=${node.importance.toFixed(2)}`);
@@ -172,6 +179,15 @@ function edgeColor(type: string, importance: number) {
     return `rgba(75, 85, 99, ${(alpha - 0.08).toFixed(3)})`;
 }
 
+function edgeSemanticLabel(type: string, locale: AppLocale): string {
+    const en = locale === "en-US";
+    if (type === "enable") return en ? "enable · direct/mediated" : "使能 · 直接/中介因果";
+    if (type === "constraint") return en ? "constraint · confounding" : "约束 · 混杂";
+    if (type === "determine") return en ? "determine · intervention" : "决定 · 干预";
+    if (type === "conflicts_with") return en ? "conflict · contradiction" : "冲突 · 矛盾";
+    return type;
+}
+
 function pickRootGoalId(graph: CDG): string | null {
     const goals = (graph.nodes || []).filter((n) => n.type === "goal");
     if (!goals.length) return null;
@@ -194,45 +210,81 @@ function slotKeyOfNode(node: CDGNode): string | null {
     if (!s) return null;
 
     if (node.type === "goal") return "slot:goal";
-    if (node.type === "constraint" && /^预算(?:上限)?[:：]\s*[0-9]{2,}\s*元?$/.test(s)) return "slot:budget";
-    if (node.type === "constraint" && /^(?:总)?行程时长[:：]\s*[0-9]{1,3}\s*天$/.test(s)) return "slot:duration";
-    if (node.type === "constraint" && /^会议时长[:：]\s*[0-9]{1,3}\s*天$/.test(s)) return "slot:duration";
-    if ((node.type === "fact" || node.type === "constraint") && /^(?:城市时长|停留时长)[:：]\s*.+\s+[0-9]{1,3}\s*天$/.test(s)) {
-        const m = s.match(/^(?:城市时长|停留时长)[:：]\s*(.+?)\s+[0-9]{1,3}\s*天$/);
+    if (node.type === "constraint" && /^(?:预算(?:上限)?|budget(?: cap)?)[:：]\s*[0-9]{2,}\s*(?:元|cny)?$/i.test(s)) {
+        return "slot:budget";
+    }
+    if ((node.type === "fact" || node.type === "constraint") && /^(?:已花预算|spent budget)[:：]\s*[0-9]{1,8}\s*(?:元|cny)?$/i.test(s)) {
+        return "slot:budget_spent";
+    }
+    if (
+        (node.type === "fact" || node.type === "constraint") &&
+        /^(?:剩余预算|可用预算|remaining budget|available budget)[:：]\s*[0-9]{1,8}\s*(?:元|cny)?$/i.test(s)
+    ) {
+        return "slot:budget_remaining";
+    }
+    if (
+        (node.type === "fact" || node.type === "constraint") &&
+        /^(?:待确认预算|待确认支出|pending budget|pending spending)[:：]\s*[0-9]{1,8}\s*(?:元|cny)?$/i.test(s)
+    ) {
+        return "slot:budget_pending";
+    }
+    if (
+        node.type === "constraint" &&
+        /^(?:总(?:行程)?时长|行程时长|trip duration|total duration|meeting duration)[:：]\s*[0-9]{1,3}\s*(?:天|days?)$/i.test(s)
+    ) {
+        return "slot:duration";
+    }
+    if (
+        (node.type === "fact" || node.type === "constraint") &&
+        /^(?:城市时长|停留时长|city duration|stay duration)[:：]\s*.+\s+[0-9]{1,3}\s*(?:天|days?)$/i.test(s)
+    ) {
+        const m = s.match(/^(?:城市时长|停留时长|city duration|stay duration)[:：]\s*(.+?)\s+[0-9]{1,3}\s*(?:天|days?)$/i);
         const city = cleanStatement(m?.[1] || "");
         if (city) return `slot:duration_city:${city}`;
         return "slot:duration_city:unknown";
     }
-    if (node.type === "fact" && /^同行人数[:：]\s*[0-9]{1,3}\s*人$/.test(s)) return "slot:people";
-    if (node.type === "fact" && /^目的地[:：]\s*.+$/.test(s)) {
-        const m = s.match(/^目的地[:：]\s*(.+)$/);
+    if (node.type === "fact" && /^(?:同行人数|travel party size|party size|people)[:：]\s*[0-9]{1,3}\s*(?:人|people)?$/i.test(s)) {
+        return "slot:people";
+    }
+    if (node.type === "fact" && /^(?:目的地|destination)[:：]\s*.+$/i.test(s)) {
+        const m = s.match(/^(?:目的地|destination)[:：]\s*(.+)$/i);
         const city = cleanStatement(m?.[1] || "");
         if (city) return `slot:destination:${city}`;
         return "slot:destination:unknown";
     }
-    if (node.type === "constraint" && /^(?:会议关键日|关键会议日|论文汇报日|关键日)[:：]\s*.+$/.test(s)) {
-        const m = s.match(/^(?:会议关键日|关键会议日|论文汇报日|关键日)[:：]\s*(.+)$/);
+    if (node.type === "constraint" && /^(?:会议关键日|关键会议日|论文汇报日|关键日|critical day|key day)[:：]\s*.+$/i.test(s)) {
+        const m = s.match(/^(?:会议关键日|关键会议日|论文汇报日|关键日|critical day|key day)[:：]\s*(.+)$/i);
         const detail = cleanStatement(m?.[1] || "critical");
         return `slot:meeting_critical:${detail || "critical"}`;
     }
-    if ((node.type === "preference" || node.type === "constraint") && /^景点偏好[:：]\s*.+$/.test(s)) return "slot:scenic_preference";
+    if ((node.type === "preference" || node.type === "constraint") && /^(?:景点偏好|scenic preference)[:：]\s*.+$/i.test(s)) {
+        return "slot:scenic_preference";
+    }
     if (
         (node.type === "preference" || node.type === "constraint") &&
-        (/^(住宿偏好|酒店偏好|住宿标准|酒店标准)[:：]/.test(s) ||
+        (/^(住宿偏好|酒店偏好|住宿标准|酒店标准|lodging preference|hotel preference|lodging standard|hotel standard)[:：]/i.test(s) ||
             /(全程|尽量|优先).{0,8}(住|入住).{0,8}(酒店|民宿|星级)/.test(s) ||
-            /(五星|四星|三星).{0,6}(酒店)/.test(s))
+            /(五星|四星|三星).{0,6}(酒店)/.test(s) ||
+            /(prefer|priority|must).{0,16}(hotel|lodging|accommodation|star)/i.test(s))
     ) {
         return "slot:lodging";
     }
     if (
         node.type === "constraint" &&
-        (/^语言约束[:：]\s*.+$/.test(s) ||
+        (/^(?:语言约束|language constraint)[:：]\s*.+$/i.test(s) ||
             /不会英语|不会英文|英语不好|英文不好|语言不通|语言障碍|翻译|口译|同传|不懂西语|不懂法语|不会当地语言|沟通困难|language barrier|translation|speak english/i.test(s))
     ) {
         return "slot:language";
     }
-    if (node.type === "constraint" && /^(关键约束|法律约束|安全约束|出行约束|行程约束)[:：]\s*.+$/.test(s)) {
-        const m = s.match(/^(?:关键约束|法律约束|安全约束|出行约束|行程约束)[:：]\s*(.+)$/);
+    if (
+        node.type === "constraint" &&
+        /^(?:关键约束|法律约束|安全约束|出行约束|行程约束|key constraint|legal constraint|safety constraint|travel constraint|itinerary constraint)[:：]\s*.+$/i.test(
+            s
+        )
+    ) {
+        const m = s.match(
+            /^(?:关键约束|法律约束|安全约束|出行约束|行程约束|key constraint|legal constraint|safety constraint|travel constraint|itinerary constraint)[:：]\s*(.+)$/i
+        );
         const detail = cleanStatement(m?.[1] || "constraint");
         return `slot:constraint:${detail || "constraint"}`;
     }
@@ -502,6 +554,7 @@ function computePositions(graph: CDG) {
 export function cdgToFlow(
     graph: CDG,
     opts?: {
+        locale?: AppLocale;
         importanceOverrides?: Record<string, number>;
         onImportanceChange?: (nodeId: string, value: number) => void;
         onNodePatch?: (nodeId: string, patch: Partial<CDGNode>) => void;
@@ -531,6 +584,7 @@ export function cdgToFlow(
     const positions = computePositions(safeGraph);
     const nodeById = new Map(safeNodes.map((n) => [n.id, n]));
     const overrides = opts?.importanceOverrides || {};
+    const locale = opts?.locale || "zh-CN";
     const activeNodeIds = opts?.activeNodeIds || new Set<string>();
     const pausedNodeIds = opts?.pausedNodeIds || new Set<string>();
     const conceptIdsByNodeId = opts?.conceptIdsByNodeId || new Map<string, string[]>();
@@ -550,9 +604,10 @@ export function cdgToFlow(
             type: "cdgNode",
             position: positions.get(n.id) || { x: 120, y: 120 },
             data: {
+                locale,
                 shortLabel,
                 fullLabel,
-                meta: nodeMeta(n),
+                meta: nodeMeta(n, locale),
                 rawNode: n,
                 nodeType: n.type,
                 layer: n.layer,
@@ -591,13 +646,17 @@ export function cdgToFlow(
         const toImportance = clamp01(overrides[e.to], clamp01(toNode?.importance, 0.68));
         const edgeImportance = Math.max(fromImportance, toImportance, 0.58);
         const stroke = edgeColor(e.type, edgeImportance);
-        const showLabel = e.type === "constraint" || e.type === "conflicts_with";
+        const showLabel =
+            e.type === "constraint" ||
+            e.type === "conflicts_with" ||
+            e.type === "enable" ||
+            e.type === "determine";
         const endpointPaused = pausedNodeIds.has(e.from) || pausedNodeIds.has(e.to);
         return {
             id: e.id,
             source: e.from,
             target: e.to,
-            label: showLabel ? e.type : undefined,
+            label: showLabel ? edgeSemanticLabel(e.type, locale) : undefined,
             type: "smoothstep",
             pathOptions: { borderRadius: 16, offset: 14 },
             style: {

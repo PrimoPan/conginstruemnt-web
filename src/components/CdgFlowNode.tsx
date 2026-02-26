@@ -11,6 +11,7 @@ function shorten(input: string, max = 36) {
 }
 
 export const CdgFlowNode = memo(function CdgFlowNode({ data, selected }: NodeProps<CdgNode>) {
+    const en = data?.locale === "en-US";
     const cls = useMemo(() => {
         const parts = ["CdgNode"];
         if (data?.nodeType) parts.push(`CdgNode--type-${data.nodeType}`);
@@ -19,7 +20,7 @@ export const CdgFlowNode = memo(function CdgFlowNode({ data, selected }: NodePro
     }, [data?.nodeType, selected]);
 
     const importancePct =
-        typeof data?.importance === "number" ? `${Math.round(data.importance * 100)}%` : "未标注";
+        typeof data?.importance === "number" ? `${Math.round(data.importance * 100)}%` : en ? "N/A" : "未标注";
 
     const wrapperStyle: React.CSSProperties = {
         background: data?.toneBg,
@@ -51,7 +52,7 @@ export const CdgFlowNode = memo(function CdgFlowNode({ data, selected }: NodePro
             />
 
             <div className="CdgNode__titleRow">
-                <div className="CdgNode__dragHandle" title="拖拽节点">
+                <div className="CdgNode__dragHandle" title={en ? "Drag node" : "拖拽节点"}>
                     ⋮⋮
                 </div>
                 <div className="CdgNode__titleWrap">
@@ -70,8 +71,8 @@ export const CdgFlowNode = memo(function CdgFlowNode({ data, selected }: NodePro
                 </div>
             </div>
             <div className="CdgNode__meta">{data.meta}</div>
-            {data?.conceptPaused ? <div className="CdgNode__chip CdgNode__chip--paused">已暂停</div> : null}
-            {data?.conceptActive ? <div className="CdgNode__chip CdgNode__chip--active">Concept 高亮</div> : null}
+            {data?.conceptPaused ? <div className="CdgNode__chip CdgNode__chip--paused">{en ? "Paused" : "已暂停"}</div> : null}
+            {data?.conceptActive ? <div className="CdgNode__chip CdgNode__chip--active">{en ? "Concept Highlight" : "Concept 高亮"}</div> : null}
         </div>
     );
 });

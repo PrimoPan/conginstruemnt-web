@@ -4,6 +4,7 @@ import "./App.css";
 
 import { api } from "./api/client";
 import type {
+  AppLocale,
   CDG,
   ConceptItem,
   ConceptMotif,
@@ -22,6 +23,7 @@ import { ConceptPanel } from "./components/ConceptPanel";
 
 const emptyGraph: CDG = { id: "", version: 0, nodes: [], edges: [] };
 const emptyMotifReasoningView: MotifReasoningView = { nodes: [], edges: [] };
+const LOCALE_STORAGE_KEY = "ci_locale";
 
 function clamp01(v: any, fallback = 0.7) {
   const n = Number(v);
@@ -56,6 +58,10 @@ function makeId(prefix = "m") {
 
 export default function App() {
   const [username, setUsername] = useState("test");
+  const [locale, setLocale] = useState<AppLocale>(() => {
+    const raw = String(localStorage.getItem(LOCALE_STORAGE_KEY) || "").trim().toLowerCase();
+    return raw.startsWith("en") ? "en-US" : "zh-CN";
+  });
 
   const [token, setToken] = useState<string>(localStorage.getItem("ci_token") || "");
   const [cid, setCid] = useState<string>(localStorage.getItem("ci_cid") || "");
@@ -79,6 +85,8 @@ export default function App() {
   const [graphGenerating, setGraphGenerating] = useState(false);
   const [exportingPlan, setExportingPlan] = useState(false);
   const loggedIn = !!token;
+  const en = locale === "en-US";
+  const tr = (zh: string, enText: string) => (en ? enText : zh);
 
   // 中断上一次流（避免串台）
   const abortRef = useRef<AbortController | null>(null);
@@ -95,6 +103,10 @@ export default function App() {
     (async () => {
       try {
         const conv = await api.getConversation(token, cid);
+        if (conv?.locale) {
+          setLocale(conv.locale);
+          localStorage.setItem(LOCALE_STORAGE_KEY, conv.locale);
+        }
         const safeGraph = normalizeGraphClient(conv.graph);
         setGraph(safeGraph);
         setDraftGraphPreview(safeGraph);
@@ -162,9 +174,13 @@ export default function App() {
 
     setBusy(true);
     try {
-      const r = await api.createConversation(token, "新对话");
+      const r = await api.createConversation(token, tr("新对话", "New Conversation"), locale);
       setCid(r.conversationId);
       localStorage.setItem("ci_cid", r.conversationId);
+      if (r?.locale) {
+        setLocale(r.locale);
+        localStorage.setItem(LOCALE_STORAGE_KEY, r.locale);
+      }
       const safeGraph = normalizeGraphClient(r.graph);
       setGraph(safeGraph);
       setDraftGraphPreview(safeGraph);
@@ -248,7 +264,7 @@ export default function App() {
           setMessages((prev) =>
               prev.map((msg) =>
                   msg.id === assistantId
-                      ? { ...msg, text: `流式失败：${err.message}` }
+                      ? { ...msg, text: `${tr("流式失败", "Stream error")}: ${err.message}` }
                       : msg
               )
           );
@@ -258,7 +274,9 @@ export default function App() {
       if (!ac.signal.aborted) {
         setMessages((prev) =>
             prev.map((msg) =>
-                msg.id === assistantId ? { ...msg, text: `请求失败：${e?.message || String(e)}` } : msg
+                msg.id === assistantId
+                    ? { ...msg, text: `${tr("请求失败", "Request failed")}: ${e?.message || String(e)}` }
+                    : msg
             )
         );
       }
@@ -298,7 +316,11 @@ export default function App() {
       } else if (out?.adviceError) {
         setMessages((prev) => [
           ...prev,
-          { id: makeId("gae"), role: "assistant", text: `图已保存，但建议生成失败：${out.adviceError}` },
+          {
+            id: makeId("gae"),
+            role: "assistant",
+            text: `${tr("图已保存，但建议生成失败", "Graph saved, but advice generation failed")}: ${out.adviceError}`,
+          },
         ]);
       }
     } finally {
@@ -326,7 +348,7 @@ export default function App() {
         {
           id: makeId("exp"),
           role: "assistant",
-          text: `导出失败：${e?.message || String(e)}`,
+          text: `${tr("导出失败", "Export failed")}: ${e?.message || String(e)}`,
         },
       ]);
     } finally {
@@ -394,6 +416,11 @@ export default function App() {
   return (
       <div className="App">
         <TopBar
+            locale={locale}
+            onLocaleChange={(next) => {
+              setLocale(next);
+              localStorage.setItem(LOCALE_STORAGE_KEY, next);
+            }}
             username={username}
             setUsername={setUsername}
             onLogin={onLogin}
@@ -410,6 +437,7 @@ export default function App() {
         <div className="Main">
           <div className="Left">
             <ChatPanel
+                locale={locale}
                 messages={messages}
                 disabled={disabled}
                 busy={busy}
@@ -420,6 +448,7 @@ export default function App() {
 
           <div className="Center">
             <ConceptPanel
+                locale={locale}
                 concepts={conceptsView}
                 motifs={motifs}
                 activeConceptId={activeConceptId}
@@ -442,6 +471,7 @@ export default function App() {
 
           <div className="Right">
             <FlowPanel
+                locale={locale}
                 graph={graph}
                 concepts={concepts}
                 motifs={motifs}
