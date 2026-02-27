@@ -32,14 +32,10 @@ function uniq(arr: string[], max = 24): string[] {
 }
 
 function kindLabel(locale: AppLocale, kind: ConceptItem["kind"]) {
-    if (kind === "intent") return tr(locale, "意图", "Intent");
-    if (kind === "requirement") return tr(locale, "需求", "Requirement");
+    if (kind === "constraint") return tr(locale, "约束", "Constraint");
     if (kind === "preference") return tr(locale, "偏好", "Preference");
-    if (kind === "risk") return tr(locale, "风险", "Risk");
     if (kind === "belief") return tr(locale, "信念", "Belief");
-    if (kind === "fact") return tr(locale, "事实", "Fact");
-    if (kind === "question") return tr(locale, "待确认", "Question");
-    return tr(locale, "其他", "Other");
+    return tr(locale, "事实陈述", "Factual assertion");
 }
 
 function motifStatusLabel(locale: AppLocale, status: ConceptMotif["status"]) {

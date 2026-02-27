@@ -154,6 +154,24 @@ function buildFallbackView(params: {
             } as MotifReasoningEdge;
         })
         .filter((e) => validNodeId.has(e.from) && validNodeId.has(e.to) && e.from !== e.to);
+
+    if (!edges.length && nodes.length >= 2) {
+        const sorted = nodes
+            .slice()
+            .sort((a, b) => clamp01(b.confidence, 0.72) - clamp01(a.confidence, 0.72) || a.id.localeCompare(b.id));
+        for (let i = 0; i < sorted.length - 1; i += 1) {
+            const from = sorted[i];
+            const to = sorted[i + 1];
+            edges.push({
+                id: `fallback_${from.id}_${to.id}`,
+                from: from.id,
+                to: to.id,
+                type: "supports",
+                confidence: clamp01((from.confidence + to.confidence) / 2, 0.68),
+            });
+            if (edges.length >= 24) break;
+        }
+    }
     return { nodes, edges };
 }
 
