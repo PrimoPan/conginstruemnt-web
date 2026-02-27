@@ -245,14 +245,10 @@ export type NodeEvidenceFocus = {
 };
 
 export type ConceptKind =
-    | "intent"
-    | "requirement"
-    | "preference"
-    | "risk"
     | "belief"
-    | "fact"
-    | "question"
-    | "other";
+    | "constraint"
+    | "preference"
+    | "factual_assertion";
 
 export type ConceptFamily =
     | "goal"
@@ -268,6 +264,7 @@ export type ConceptFamily =
     | "scenic_preference"
     | "generic_constraint"
     | "sub_location"
+    | "conflict"
     | "other";
 
 export type ConceptItem = {
