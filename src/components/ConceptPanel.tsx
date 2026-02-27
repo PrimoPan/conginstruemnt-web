@@ -68,7 +68,6 @@ function sourceRefToken(source: string) {
 
 function motifPattern(
     motif: ConceptMotif,
-    conceptById: Map<string, ConceptItem>,
     conceptNoById: Map<string, number>
 ) {
     const ids = Array.isArray(motif.conceptIds) ? motif.conceptIds : [];
@@ -79,8 +78,7 @@ function motifPattern(
     if (!sources.length) return "concept_a -> concept_b";
     const ref = (id: string) => {
         const no = conceptNoById.get(id);
-        const code = no ? `C${no}` : cleanText(id, 16);
-        return `${code}:${cleanText(conceptById.get(id)?.title || id, 24)}`;
+        return no ? `C${no}` : cleanText(id, 16);
     };
     return `${sources.map(ref).join(" + ")} -> ${ref(target)}`;
 }
@@ -304,7 +302,6 @@ export function ConceptPanel(props: {
                             id,
                             no: conceptNoById.get(id),
                             code: conceptNoById.get(id) ? `C${conceptNoById.get(id)}` : cleanText(id, 16),
-                            title: cleanText(conceptById.get(id)?.title, 60) || id,
                         }));
                         const refs = uniq(
                             (m.conceptIds || []).flatMap((id) =>
@@ -312,12 +309,8 @@ export function ConceptPanel(props: {
                             ),
                             6
                         );
-                        const pattern = motifPattern(m, conceptById, conceptNoById);
-                        const causalFormulaRaw = cleanText(m.causalFormula, 120);
-                        const causalFormula =
-                            /(^|[^A-Za-z])C\d+\b/.test(causalFormulaRaw) && conceptRefs.length
-                                ? pattern
-                                : causalFormulaRaw || pattern;
+                        const pattern = motifPattern(m, conceptNoById);
+                        const causalFormula = pattern;
                         const isEditing = editingMotifId === m.id;
                         return (
                             <div
@@ -419,7 +412,7 @@ export function ConceptPanel(props: {
                                 <div className="MotifCard__concepts">
                                     {conceptRefs.slice(0, 4).map((ref) => (
                                         <span key={`${m.id}_c_${ref.id}`} className="MotifCard__conceptTag">
-                                            {ref.code}:{cleanText(ref.title, 14)}
+                                            {ref.code}
                                         </span>
                                     ))}
                                     {conceptRefs.length > 4 ? (

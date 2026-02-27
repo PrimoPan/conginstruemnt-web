@@ -78,7 +78,6 @@ function extractSourceRef(source: string): string {
 
 function motifPattern(
     motif: ConceptMotif,
-    conceptById: Map<string, ConceptItem>,
     conceptNoById: Map<string, number>
 ): string {
     const ids = Array.isArray(motif.conceptIds) ? motif.conceptIds : [];
@@ -89,9 +88,7 @@ function motifPattern(
     if (!sources.length) return "concept_a -> concept_b";
     const ref = (id: string) => {
         const no = conceptNoById.get(id);
-        const code = no ? `C${no}` : cleanText(id, 16);
-        const title = cleanText(conceptById.get(id)?.title, 28) || cleanText(id, 16);
-        return `${code}:${title}`;
+        return no ? `C${no}` : cleanText(id, 16);
     };
     return `${sources.map(ref).join(" + ")} -> ${ref(target)}`;
 }
@@ -126,11 +123,11 @@ function buildFallbackView(params: {
             relation: m.relation,
             dependencyClass: m.dependencyClass || m.relation,
             causalOperator: m.causalOperator,
-            causalFormula: cleanText(m.causalFormula, 120) || motifPattern(m, conceptById, conceptNoById),
+            causalFormula: cleanText(m.causalFormula, 120) || motifPattern(m, conceptNoById),
             motifType: m.motifType,
             status: m.status,
             confidence: clamp01(m.confidence, 0.72),
-            pattern: motifPattern(m, conceptById, conceptNoById),
+            pattern: motifPattern(m, conceptNoById),
             conceptIds,
             conceptTitles,
             sourceRefs,
@@ -305,14 +302,9 @@ function layoutReasoningGraph(
             const n = group[i];
             const confidence = clamp01(n.confidence, 0.7);
             const conceptIds = (n.conceptIds || []).slice(0, 3);
-            const conceptLabels = conceptIds.map((id, idx) => {
+            const conceptLabels = conceptIds.map((id) => {
                 const no = conceptNoById?.get(id);
-                const code = no ? `C${no}` : cleanText(id, 16);
-                const title =
-                    cleanText(conceptById?.get(id)?.title, 42) ||
-                    cleanText(n.conceptTitles?.[idx], 42) ||
-                    cleanText(id, 16);
-                return `${code}:${title}`;
+                return no ? `C${no}` : cleanText(id, 16);
             });
             const src = conceptIds.slice(0, Math.max(0, conceptIds.length - 1));
             const tgt = conceptIds[conceptIds.length - 1];
@@ -321,23 +313,13 @@ function layoutReasoningGraph(
                     ? `${src
                           .map((id) => {
                               const no = conceptNoById?.get(id);
-                              const code = no ? `C${no}` : cleanText(id, 16);
-                              const title =
-                                  cleanText(conceptById?.get(id)?.title, 30) ||
-                                  cleanText(id, 16);
-                              return `${code}:${title}`;
+                              return no ? `C${no}` : cleanText(id, 16);
                           })
                           .join(" + ")} -> ${(() => {
                               const no = conceptNoById?.get(tgt);
-                              const code = no ? `C${no}` : cleanText(tgt, 16);
-                              const title =
-                                  cleanText(conceptById?.get(tgt)?.title, 30) ||
-                                  cleanText(tgt, 16);
-                              return `${code}:${title}`;
+                              return no ? `C${no}` : cleanText(tgt, 16);
                           })()}`
                     : n.pattern;
-            const causalFormulaRaw = cleanText(n.causalFormula, 120);
-            const shouldReplaceLegacyFormula = /(^|[^A-Za-z])C\d+\b/.test(causalFormulaRaw);
             nodes.push({
                 id: n.id,
                 type: "motifNode",
@@ -354,7 +336,7 @@ function layoutReasoningGraph(
                     relation: n.relation,
                     dependencyClass: n.dependencyClass || n.relation,
                     causalOperator: n.causalOperator,
-                    causalFormula: shouldReplaceLegacyFormula ? rebuiltPattern : causalFormulaRaw || rebuiltPattern,
+                    causalFormula: rebuiltPattern,
                     motifType: n.motifType,
                     pattern: rebuiltPattern,
                     conceptLabels,
