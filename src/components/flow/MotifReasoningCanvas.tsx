@@ -78,13 +78,12 @@ function extractSourceRef(source: string): string {
 
 function motifPattern(motif: ConceptMotif): string {
     const ids = Array.isArray(motif.conceptIds) ? motif.conceptIds : [];
-    if (!ids.length) return "C1 -> C2";
+    if (!ids.length) return "concept_a -> concept_b";
     const anchor = cleanText(motif.anchorConceptId, 96);
     const sources = ids.filter((id) => id !== anchor);
     const target = ids.find((id) => id === anchor) || ids[ids.length - 1];
-    if (!sources.length) return "C1 -> C2";
-    const sourceTags = sources.map((_, i) => `C${i + 1}`);
-    return `${sourceTags.join(" + ")} -> C${sourceTags.length + 1} (${cleanText(target, 18)})`;
+    if (!sources.length) return "concept_a -> concept_b";
+    return `${sources.join(" + ")} -> ${target}`;
 }
 
 function buildFallbackView(params: {
@@ -283,7 +282,13 @@ function layoutReasoningGraph(view: MotifReasoningView, locale?: AppLocale): {
         for (let i = 0; i < group.length; i += 1) {
             const n = group[i];
             const confidence = clamp01(n.confidence, 0.7);
-            const conceptLabels = (n.conceptTitles || []).slice(0, 3).map((title, idx) => `C${idx + 1}:${title}`);
+            const conceptIds = (n.conceptIds || []).slice(0, 3);
+            const conceptLabels = conceptIds.map((id, idx) => {
+                const title = cleanText(n.conceptTitles?.[idx], 42) || id;
+                return `${id}:${title}`;
+            });
+            const causalFormulaRaw = cleanText(n.causalFormula, 120);
+            const shouldReplaceLegacyFormula = /(^|[^A-Za-z])C\d+\b/.test(causalFormulaRaw);
             nodes.push({
                 id: n.id,
                 type: "motifNode",
@@ -300,7 +305,7 @@ function layoutReasoningGraph(view: MotifReasoningView, locale?: AppLocale): {
                     relation: n.relation,
                     dependencyClass: n.dependencyClass || n.relation,
                     causalOperator: n.causalOperator,
-                    causalFormula: cleanText(n.causalFormula, 120) || n.pattern,
+                    causalFormula: shouldReplaceLegacyFormula ? n.pattern : causalFormulaRaw || n.pattern,
                     motifType: n.motifType,
                     pattern: n.pattern,
                     conceptLabels,

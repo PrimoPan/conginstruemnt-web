@@ -66,17 +66,15 @@ function sourceRefToken(source: string) {
     return s.slice(0, 18);
 }
 
-function motifPattern(motif: ConceptMotif, conceptTitles: string[]) {
+function motifPattern(motif: ConceptMotif, conceptById: Map<string, ConceptItem>) {
     const ids = Array.isArray(motif.conceptIds) ? motif.conceptIds : [];
-    if (!ids.length) return "C1 -> C2";
+    if (!ids.length) return "concept_a -> concept_b";
     const anchor = cleanText(motif.anchorConceptId, 96);
     const sources = ids.filter((id) => id !== anchor);
     const target = ids.find((id) => id === anchor) || ids[ids.length - 1];
-    if (!sources.length) return "C1 -> C2";
-    const sourceLabels = sources.map((_, i) => `C${i + 1}`);
-    const targetLabel = `C${sourceLabels.length + 1}`;
-    const targetTitle = conceptTitles[ids.indexOf(target)] || "target";
-    return `${sourceLabels.join(" + ")} -> ${targetLabel} (${cleanText(targetTitle, 26)})`;
+    if (!sources.length) return "concept_a -> concept_b";
+    const ref = (id: string) => `${id}:${cleanText(conceptById.get(id)?.title || id, 24)}`;
+    return `${sources.map(ref).join(" + ")} -> ${ref(target)}`;
 }
 
 function dependencyLabel(locale: AppLocale, relation: ConceptMotif["relation"]) {
@@ -260,6 +258,9 @@ export function ConceptPanel(props: {
                                 </div>
 
                                 <div className="ConceptCard__desc">{c.description || tr(locale, "暂无描述", "No description")}</div>
+                                <div className="ConceptCard__metaId">
+                                    ID: <code>{c.id}</code>
+                                </div>
                                 <div className="ConceptCard__foot">
                                     <span>{scorePct}%</span>
                                     <span>
@@ -285,15 +286,22 @@ export function ConceptPanel(props: {
                         const isUpdatedThisTurn = m.novelty === "new" || m.novelty === "updated";
                         const confidencePct = Math.round(clamp01(m.confidence, 0.72) * 100);
                         const barsOn = Math.max(1, Math.round((confidencePct / 100) * 4));
-                        const conceptTitles = (m.conceptIds || []).map((id) => cleanText(conceptById.get(id)?.title, 60) || id);
+                        const conceptRefs = (m.conceptIds || []).map((id) => ({
+                            id,
+                            title: cleanText(conceptById.get(id)?.title, 60) || id,
+                        }));
                         const refs = uniq(
                             (m.conceptIds || []).flatMap((id) =>
                                 (conceptById.get(id)?.sourceMsgIds || []).map(sourceRefToken).filter(Boolean)
                             ),
                             6
                         );
-                        const pattern = motifPattern(m, conceptTitles);
-                        const causalFormula = cleanText(m.causalFormula, 120) || pattern;
+                        const pattern = motifPattern(m, conceptById);
+                        const causalFormulaRaw = cleanText(m.causalFormula, 120);
+                        const causalFormula =
+                            /(^|[^A-Za-z])C\d+\b/.test(causalFormulaRaw) && conceptRefs.length
+                                ? pattern
+                                : causalFormulaRaw || pattern;
                         const isEditing = editingMotifId === m.id;
                         return (
                             <div
@@ -388,13 +396,13 @@ export function ConceptPanel(props: {
                                 </div>
                                 <div className="MotifCard__pattern">{causalFormula}</div>
                                 <div className="MotifCard__concepts">
-                                    {conceptTitles.slice(0, 4).map((title, idx) => (
-                                        <span key={`${m.id}_c_${idx}`} className="MotifCard__conceptTag">
-                                            C{idx + 1}:{cleanText(title, 14)}
+                                    {conceptRefs.slice(0, 4).map((ref) => (
+                                        <span key={`${m.id}_c_${ref.id}`} className="MotifCard__conceptTag">
+                                            {ref.id}:{cleanText(ref.title, 14)}
                                         </span>
                                     ))}
-                                    {conceptTitles.length > 4 ? (
-                                        <span className="MotifCard__conceptTag">+{conceptTitles.length - 4}</span>
+                                    {conceptRefs.length > 4 ? (
+                                        <span className="MotifCard__conceptTag">+{conceptRefs.length - 4}</span>
                                     ) : null}
                                 </div>
                                 <div className="MotifCard__progress">
