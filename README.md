@@ -120,7 +120,8 @@ REACT_APP_API_BASE_URLS=http://127.0.0.1:3001,http://43.138.212.17:3001
 - `GET /api/conversations/:id/turns`
 - `POST /api/conversations/:id/turn`
 - `POST /api/conversations/:id/turn/stream`（SSE）
-- `GET /api/conversations/:id/travel-plan/export.pdf`（按会话 locale 下载中/英文旅行计划 PDF）
+- `GET /api/conversations/:id/travel-plan/export`（推荐；按会话 locale 下载中/英文旅行计划 PDF）
+- `GET /api/conversations/:id/travel-plan/export.pdf`（兼容路径）
 
 说明：
 - `POST /api/conversations` 请求体为 `{ title, locale }`，`locale` 为 `zh-CN | en-US`。

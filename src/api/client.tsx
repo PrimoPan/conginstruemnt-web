@@ -446,6 +446,13 @@ export const api = {
     turnStream: (token: string, cid: string, userText: string, handlers: TurnStreamHandlers) =>
         postTurnStream({ token, cid, userText, handlers }),
 
-    exportTravelPlanPdf: (token: string, cid: string) =>
-        httpBlob(`/api/conversations/${cid}/travel-plan/export.pdf`, {}, token),
+    exportTravelPlanPdf: async (token: string, cid: string) => {
+        const basePath = `/api/conversations/${cid}/travel-plan`;
+        try {
+            // Prefer extension-less endpoint: some static/proxy setups intercept `.pdf` paths.
+            return await httpBlob(`${basePath}/export`, {}, token);
+        } catch (err) {
+            return await httpBlob(`${basePath}/export.pdf`, {}, token);
+        }
+    },
 };
