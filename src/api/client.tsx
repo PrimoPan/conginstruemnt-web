@@ -448,20 +448,43 @@ export const api = {
 
     exportTravelPlanPdf: async (token: string, cid: string) => {
         const basePath = `/api/conversations/${cid}/travel-plan`;
-        try {
-            // Prefer POST + extension-less endpoint:
-            // some static/proxy setups wrongly rewrite GET *.pdf to HTML fallback pages.
-            return await httpBlob(
-                `${basePath}/export`,
-                { method: "POST", body: "{}", headers: { Accept: "application/pdf" } },
-                token
-            );
-        } catch (err) {
+        const attempts: Array<{ path: string; opts: RequestInit }> = [
+            {
+                path: `${basePath}/export`,
+                opts: { method: "POST", body: "{}", headers: { Accept: "application/pdf" } },
+            },
+            {
+                path: `${basePath}/export`,
+                opts: { method: "GET", headers: { Accept: "application/pdf" } },
+            },
+            {
+                path: `${basePath}/export.pdf`,
+                opts: { method: "POST", body: "{}", headers: { Accept: "application/pdf" } },
+            },
+            {
+                path: `${basePath}/export.pdf`,
+                opts: { method: "GET", headers: { Accept: "application/pdf" } },
+            },
+        ];
+
+        const errors: string[] = [];
+        for (const attempt of attempts) {
             try {
-                return await httpBlob(`${basePath}/export`, { headers: { Accept: "application/pdf" } }, token);
-            } catch {
-                return await httpBlob(`${basePath}/export.pdf`, { headers: { Accept: "application/pdf" } }, token);
+                return await httpBlob(attempt.path, attempt.opts, token);
+            } catch (err: any) {
+                const message = String(err?.message || err || "").trim();
+                errors.push(`${attempt.opts.method || "GET"} ${attempt.path}: ${message}`);
+                // If server returns a real backend error (not route-miss/html fallback), stop fallback and surface it.
+                if (
+                    message &&
+                    !/Cannot (GET|POST)\s+\/api\/conversations\/.+\/travel-plan\/export(?:\.pdf)?/i.test(message) &&
+                    !/Unexpected HTML response|returned HTML instead of PDF/i.test(message) &&
+                    !/HTTP 404/i.test(message)
+                ) {
+                    throw err;
+                }
             }
         }
+        throw new Error(errors.join(" | "));
     },
 };
