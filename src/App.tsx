@@ -365,10 +365,46 @@ export default function App() {
   }
 
   function onPatchMotif(motifId: string, patch: Partial<ConceptMotif>) {
-    const next = (motifs || []).map((m) =>
+    const prevMotifs = motifs || [];
+    const prevMotif = prevMotifs.find((m) => m.id === motifId);
+    const nextMotifs = prevMotifs.map((m) =>
         m.id === motifId ? { ...m, ...patch, updatedAt: new Date().toISOString() } : m
     );
-    setMotifs(next);
+    setMotifs(nextMotifs);
+
+    const nextStatus = String((patch as any)?.status || "").trim().toLowerCase();
+    if (nextStatus) {
+      const prevStatus = String(prevMotif?.status || "").trim().toLowerCase();
+      const nextMotif = nextMotifs.find((m) => m.id === motifId);
+      const linkedConceptIds = new Set<string>((nextMotif?.conceptIds || prevMotif?.conceptIds || []).filter(Boolean));
+
+      if (linkedConceptIds.size) {
+        setConcepts((prevConcepts) => {
+          const now = new Date().toISOString();
+          return (prevConcepts || []).map((c) => {
+            if (!linkedConceptIds.has(c.id)) return c;
+
+            // 用户暂停 motif：关联 concept 一并暂停。
+            if (nextStatus === "disabled") {
+              if (c.paused) return c;
+              return { ...c, paused: true, updatedAt: now };
+            }
+
+            // motif 从 disabled 恢复时：仅在没有其他 disabled motif 依赖该 concept 时自动恢复。
+            if (prevStatus === "disabled" && nextStatus !== "disabled") {
+              const blockedByOtherDisabledMotif = nextMotifs.some(
+                  (m) => m.id !== motifId && m.status === "disabled" && (m.conceptIds || []).includes(c.id)
+              );
+              if (blockedByOtherDisabledMotif || !c.paused) return c;
+              return { ...c, paused: false, updatedAt: now };
+            }
+
+            return c;
+          });
+        });
+      }
+    }
+
     setConceptsDirty(true);
   }
 

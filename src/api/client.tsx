@@ -449,10 +449,19 @@ export const api = {
     exportTravelPlanPdf: async (token: string, cid: string) => {
         const basePath = `/api/conversations/${cid}/travel-plan`;
         try {
-            // Prefer extension-less endpoint: some static/proxy setups intercept `.pdf` paths.
-            return await httpBlob(`${basePath}/export`, {}, token);
+            // Prefer POST + extension-less endpoint:
+            // some static/proxy setups wrongly rewrite GET *.pdf to HTML fallback pages.
+            return await httpBlob(
+                `${basePath}/export`,
+                { method: "POST", body: "{}", headers: { Accept: "application/pdf" } },
+                token
+            );
         } catch (err) {
-            return await httpBlob(`${basePath}/export.pdf`, {}, token);
+            try {
+                return await httpBlob(`${basePath}/export`, { headers: { Accept: "application/pdf" } }, token);
+            } catch {
+                return await httpBlob(`${basePath}/export.pdf`, { headers: { Accept: "application/pdf" } }, token);
+            }
         }
     },
 };
