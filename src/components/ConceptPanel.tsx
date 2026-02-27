@@ -66,14 +66,22 @@ function sourceRefToken(source: string) {
     return s.slice(0, 18);
 }
 
-function motifPattern(motif: ConceptMotif, conceptById: Map<string, ConceptItem>) {
+function motifPattern(
+    motif: ConceptMotif,
+    conceptById: Map<string, ConceptItem>,
+    conceptNoById: Map<string, number>
+) {
     const ids = Array.isArray(motif.conceptIds) ? motif.conceptIds : [];
     if (!ids.length) return "concept_a -> concept_b";
     const anchor = cleanText(motif.anchorConceptId, 96);
     const sources = ids.filter((id) => id !== anchor);
     const target = ids.find((id) => id === anchor) || ids[ids.length - 1];
     if (!sources.length) return "concept_a -> concept_b";
-    const ref = (id: string) => `${id}:${cleanText(conceptById.get(id)?.title || id, 24)}`;
+    const ref = (id: string) => {
+        const no = conceptNoById.get(id);
+        const code = no ? `C${no}` : cleanText(id, 16);
+        return `${code}:${cleanText(conceptById.get(id)?.title || id, 24)}`;
+    };
     return `${sources.map(ref).join(" + ")} -> ${ref(target)}`;
 }
 
@@ -131,6 +139,11 @@ export function ConceptPanel(props: {
     const [editingMotifDesc, setEditingMotifDesc] = useState("");
 
     const conceptById = useMemo(() => new Map((concepts || []).map((c) => [c.id, c])), [concepts]);
+    const conceptNoById = useMemo(() => {
+        const m = new Map<string, number>();
+        (concepts || []).forEach((c, idx) => m.set(c.id, idx + 1));
+        return m;
+    }, [concepts]);
     const selectedConcept = useMemo(
         () => (activeConceptId ? concepts.find((c) => c.id === activeConceptId) || null : null),
         [activeConceptId, concepts]
@@ -188,6 +201,7 @@ export function ConceptPanel(props: {
                 {tab === "concept"
                     ? concepts.map((c) => {
                         const active = c.id === activeConceptId;
+                        const cNo = conceptNoById.get(c.id);
                         const scorePct = Math.round(clamp01(c.score, 0.72) * 100);
                         const nodeCount = Array.isArray(c.nodeIds) ? c.nodeIds.length : 0;
                         const motifCount = Array.isArray(c.motifIds) ? c.motifIds.length : 0;
@@ -259,7 +273,7 @@ export function ConceptPanel(props: {
 
                                 <div className="ConceptCard__desc">{c.description || tr(locale, "暂无描述", "No description")}</div>
                                 <div className="ConceptCard__metaId">
-                                    ID: <code>{c.id}</code>
+                                    {tr(locale, "编号", "Code")}: <code>{cNo ? `C${cNo}` : c.id}</code>
                                 </div>
                                 <div className="ConceptCard__foot">
                                     <span>{scorePct}%</span>
@@ -288,6 +302,8 @@ export function ConceptPanel(props: {
                         const barsOn = Math.max(1, Math.round((confidencePct / 100) * 4));
                         const conceptRefs = (m.conceptIds || []).map((id) => ({
                             id,
+                            no: conceptNoById.get(id),
+                            code: conceptNoById.get(id) ? `C${conceptNoById.get(id)}` : cleanText(id, 16),
                             title: cleanText(conceptById.get(id)?.title, 60) || id,
                         }));
                         const refs = uniq(
@@ -296,7 +312,7 @@ export function ConceptPanel(props: {
                             ),
                             6
                         );
-                        const pattern = motifPattern(m, conceptById);
+                        const pattern = motifPattern(m, conceptById, conceptNoById);
                         const causalFormulaRaw = cleanText(m.causalFormula, 120);
                         const causalFormula =
                             /(^|[^A-Za-z])C\d+\b/.test(causalFormulaRaw) && conceptRefs.length
@@ -395,10 +411,15 @@ export function ConceptPanel(props: {
                                     {dependencyLabel(locale, m.dependencyClass || m.relation)} · {causalOperatorLabel(locale, m.causalOperator)}
                                 </div>
                                 <div className="MotifCard__pattern">{causalFormula}</div>
+                                <div className="ConceptCard__metaId">
+                                    {tr(locale, "关联Concept", "Linked concepts")}:
+                                    {" "}
+                                    {(conceptRefs.slice(0, 6).map((x) => x.code).join(", ")) || tr(locale, "无", "none")}
+                                </div>
                                 <div className="MotifCard__concepts">
                                     {conceptRefs.slice(0, 4).map((ref) => (
                                         <span key={`${m.id}_c_${ref.id}`} className="MotifCard__conceptTag">
-                                            {ref.id}:{cleanText(ref.title, 14)}
+                                            {ref.code}:{cleanText(ref.title, 14)}
                                         </span>
                                     ))}
                                     {conceptRefs.length > 4 ? (

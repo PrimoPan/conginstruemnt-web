@@ -76,14 +76,24 @@ function extractSourceRef(source: string): string {
     return s.slice(0, 18);
 }
 
-function motifPattern(motif: ConceptMotif): string {
+function motifPattern(
+    motif: ConceptMotif,
+    conceptById: Map<string, ConceptItem>,
+    conceptNoById: Map<string, number>
+): string {
     const ids = Array.isArray(motif.conceptIds) ? motif.conceptIds : [];
     if (!ids.length) return "concept_a -> concept_b";
     const anchor = cleanText(motif.anchorConceptId, 96);
     const sources = ids.filter((id) => id !== anchor);
     const target = ids.find((id) => id === anchor) || ids[ids.length - 1];
     if (!sources.length) return "concept_a -> concept_b";
-    return `${sources.join(" + ")} -> ${target}`;
+    const ref = (id: string) => {
+        const no = conceptNoById.get(id);
+        const code = no ? `C${no}` : cleanText(id, 16);
+        const title = cleanText(conceptById.get(id)?.title, 28) || cleanText(id, 16);
+        return `${code}:${title}`;
+    };
+    return `${sources.map(ref).join(" + ")} -> ${ref(target)}`;
 }
 
 function buildFallbackView(params: {
@@ -92,10 +102,17 @@ function buildFallbackView(params: {
     concepts: ConceptItem[];
 }): MotifReasoningView {
     const conceptById = new Map((params.concepts || []).map((c) => [c.id, c]));
+    const conceptNoById = new Map<string, number>();
+    (params.concepts || []).forEach((c, idx) => conceptNoById.set(c.id, idx + 1));
     const motifs = (params.motifs || []).filter((m) => m.status !== "cancelled");
     const nodes: MotifReasoningNode[] = motifs.map((m) => {
         const conceptIds = uniq(m.conceptIds || [], 8);
-        const conceptTitles = conceptIds.map((id) => cleanText(conceptById.get(id)?.title, 48) || id);
+        const conceptTitles = conceptIds.map((id) => {
+            const no = conceptNoById.get(id);
+            const code = no ? `C${no}` : cleanText(id, 16);
+            const title = cleanText(conceptById.get(id)?.title, 48) || id;
+            return `${code}:${title}`;
+        });
         const sourceRefs = uniq(
             conceptIds.flatMap((id) =>
                 (conceptById.get(id)?.sourceMsgIds || []).map(extractSourceRef).filter(Boolean)
@@ -109,11 +126,11 @@ function buildFallbackView(params: {
             relation: m.relation,
             dependencyClass: m.dependencyClass || m.relation,
             causalOperator: m.causalOperator,
-            causalFormula: cleanText(m.causalFormula, 120) || motifPattern(m),
+            causalFormula: cleanText(m.causalFormula, 120) || motifPattern(m, conceptById, conceptNoById),
             motifType: m.motifType,
             status: m.status,
             confidence: clamp01(m.confidence, 0.72),
-            pattern: motifPattern(m),
+            pattern: motifPattern(m, conceptById, conceptNoById),
             conceptIds,
             conceptTitles,
             sourceRefs,
@@ -208,7 +225,12 @@ function edgeTypeLabel(type: MotifLink["type"], locale?: AppLocale) {
     return type;
 }
 
-function layoutReasoningGraph(view: MotifReasoningView, locale?: AppLocale): {
+function layoutReasoningGraph(
+    view: MotifReasoningView,
+    locale?: AppLocale,
+    conceptById?: Map<string, ConceptItem>,
+    conceptNoById?: Map<string, number>
+): {
     nodes: Node<MotifFlowData>[];
     edges: Edge[];
 } {
@@ -284,9 +306,36 @@ function layoutReasoningGraph(view: MotifReasoningView, locale?: AppLocale): {
             const confidence = clamp01(n.confidence, 0.7);
             const conceptIds = (n.conceptIds || []).slice(0, 3);
             const conceptLabels = conceptIds.map((id, idx) => {
-                const title = cleanText(n.conceptTitles?.[idx], 42) || id;
-                return `${id}:${title}`;
+                const no = conceptNoById?.get(id);
+                const code = no ? `C${no}` : cleanText(id, 16);
+                const title =
+                    cleanText(conceptById?.get(id)?.title, 42) ||
+                    cleanText(n.conceptTitles?.[idx], 42) ||
+                    cleanText(id, 16);
+                return `${code}:${title}`;
             });
+            const src = conceptIds.slice(0, Math.max(0, conceptIds.length - 1));
+            const tgt = conceptIds[conceptIds.length - 1];
+            const rebuiltPattern =
+                src.length && tgt
+                    ? `${src
+                          .map((id) => {
+                              const no = conceptNoById?.get(id);
+                              const code = no ? `C${no}` : cleanText(id, 16);
+                              const title =
+                                  cleanText(conceptById?.get(id)?.title, 30) ||
+                                  cleanText(id, 16);
+                              return `${code}:${title}`;
+                          })
+                          .join(" + ")} -> ${(() => {
+                              const no = conceptNoById?.get(tgt);
+                              const code = no ? `C${no}` : cleanText(tgt, 16);
+                              const title =
+                                  cleanText(conceptById?.get(tgt)?.title, 30) ||
+                                  cleanText(tgt, 16);
+                              return `${code}:${title}`;
+                          })()}`
+                    : n.pattern;
             const causalFormulaRaw = cleanText(n.causalFormula, 120);
             const shouldReplaceLegacyFormula = /(^|[^A-Za-z])C\d+\b/.test(causalFormulaRaw);
             nodes.push({
@@ -305,9 +354,9 @@ function layoutReasoningGraph(view: MotifReasoningView, locale?: AppLocale): {
                     relation: n.relation,
                     dependencyClass: n.dependencyClass || n.relation,
                     causalOperator: n.causalOperator,
-                    causalFormula: shouldReplaceLegacyFormula ? n.pattern : causalFormulaRaw || n.pattern,
+                    causalFormula: shouldReplaceLegacyFormula ? rebuiltPattern : causalFormulaRaw || rebuiltPattern,
                     motifType: n.motifType,
-                    pattern: n.pattern,
+                    pattern: rebuiltPattern,
                     conceptLabels,
                     sourceRefs: (n.sourceRefs || []).slice(0, 6),
                 },
@@ -411,6 +460,15 @@ export function MotifReasoningCanvas(props: {
     onSelectConcept?: (conceptId: string) => void;
 }) {
     const en = props.locale === "en-US";
+    const conceptById = useMemo(
+        () => new Map((props.concepts || []).map((c) => [c.id, c])),
+        [props.concepts]
+    );
+    const conceptNoById = useMemo(() => {
+        const m = new Map<string, number>();
+        (props.concepts || []).forEach((c, idx) => m.set(c.id, idx + 1));
+        return m;
+    }, [props.concepts]);
     const resolvedView = useMemo(() => {
         const serverView = props.reasoningView;
         const hasServerView = Array.isArray(serverView?.nodes) && (serverView?.nodes?.length || 0) > 0;
@@ -422,7 +480,10 @@ export function MotifReasoningCanvas(props: {
         });
     }, [props.reasoningView, props.motifs, props.motifLinks, props.concepts]);
 
-    const { nodes, edges } = useMemo(() => layoutReasoningGraph(resolvedView, props.locale), [resolvedView, props.locale]);
+    const { nodes, edges } = useMemo(
+        () => layoutReasoningGraph(resolvedView, props.locale, conceptById, conceptNoById),
+        [resolvedView, props.locale, conceptById, conceptNoById]
+    );
     const renderedNodes = useMemo(
         () =>
             nodes.map((n) => ({
