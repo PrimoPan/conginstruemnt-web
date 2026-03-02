@@ -19,7 +19,11 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm ci
+        run: |
+          if ! npm ci; then
+            echo "WARN: npm ci failed on runner, fallback to npm install"
+            npm install --no-audit --no-fund
+          fi
 
       - name: Build frontend
         run: npm run build
@@ -56,4 +60,5 @@ jobs:
           script: |
             set -e
             test -f /home/ubuntu/conginstrument-web/build/index.html
+            echo "${{ github.sha }}" > /home/ubuntu/conginstrument-web/build/.deployed_sha
             ls -lah /home/ubuntu/conginstrument-web/build | head -n 20
