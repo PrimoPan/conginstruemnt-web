@@ -250,6 +250,17 @@ export type ConceptKind =
     | "preference"
     | "factual_assertion";
 
+export type ConceptExtractionStage =
+    | "identification"
+    | "disambiguation"
+    | "validation";
+
+export const CONCEPT_EXTRACTION_STAGES: ConceptExtractionStage[] = [
+    "identification",
+    "disambiguation",
+    "validation",
+];
+
 export type ConceptFamily =
     | "goal"
     | "destination"
@@ -327,7 +338,7 @@ export type ConceptMotif = {
     updatedAt: string;
 };
 
-export type MotifLinkType = "supports" | "depends_on" | "conflicts" | "refines";
+export type MotifLinkType = "enable" | "constraint" | "determine" | "conflicts_with";
 
 export type MotifLink = {
     id: string;
@@ -364,9 +375,27 @@ export type MotifReasoningEdge = {
     confidence: number;
 };
 
+export type MotifReasoningStepRole = "premise" | "bridge" | "decision" | "isolated";
+
+export type MotifReasoningStep = {
+    id: string;
+    order: number;
+    motifId: string;
+    motifNodeId: string;
+    role: MotifReasoningStepRole;
+    status: MotifLifecycleStatus;
+    dependencyClass?: EdgeType;
+    causalOperator?: MotifCausalOperator;
+    dependsOnMotifIds: string[];
+    usedConceptIds: string[];
+    usedConceptTitles: string[];
+    explanation: string;
+};
+
 export type MotifReasoningView = {
     nodes: MotifReasoningNode[];
     edges: MotifReasoningEdge[];
+    steps?: MotifReasoningStep[];
 };
 
 export type ContextStatus = "active" | "uncertain" | "conflicted" | "disabled";

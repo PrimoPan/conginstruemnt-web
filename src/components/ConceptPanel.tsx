@@ -146,7 +146,6 @@ export function ConceptPanel(props: {
     const motifList = useMemo(
         () =>
             (motifs || [])
-                .filter((m) => m.status !== "cancelled")
                 .slice()
                 .sort((a, b) => {
                     const rank = (s: ConceptMotif["status"]) =>
@@ -400,11 +399,6 @@ export function ConceptPanel(props: {
                                     {dependencyLabel(locale, m.dependencyClass || m.relation)} · {causalOperatorLabel(locale, m.causalOperator)}
                                 </div>
                                 <div className="MotifCard__pattern">{causalFormula}</div>
-                                <div className="ConceptCard__metaId">
-                                    {tr(locale, "关联Concept", "Linked concepts")}:
-                                    {" "}
-                                    {(conceptRefs.slice(0, 6).map((x) => x.code).join(", ")) || tr(locale, "无", "none")}
-                                </div>
                                 <div className="MotifCard__concepts">
                                     {conceptRefs.slice(0, 4).map((ref) => (
                                         <span key={`${m.id}_c_${ref.id}`} className="MotifCard__conceptTag">

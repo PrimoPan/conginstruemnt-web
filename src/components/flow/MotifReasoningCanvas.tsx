@@ -16,6 +16,8 @@ import type {
     ConceptItem,
     ConceptMotif,
     MotifLink,
+    MotifReasoningStep,
+    MotifReasoningStepRole,
     MotifReasoningEdge,
     MotifReasoningNode,
     MotifReasoningView,
@@ -35,6 +37,8 @@ type MotifFlowData = {
     pattern: string;
     conceptLabels: string[];
     sourceRefs: string[];
+    stepOrder?: number;
+    stepRole?: MotifReasoningStepRole;
     selected?: boolean;
 };
 
@@ -76,6 +80,25 @@ function extractSourceRef(source: string): string {
     return s.slice(0, 18);
 }
 
+function normalizeMotifLinkType(raw: string): MotifLink["type"] {
+    const t = cleanText(raw, 32).toLowerCase();
+    if (t === "enable" || t === "constraint" || t === "determine" || t === "conflicts_with") {
+        return t as MotifLink["type"];
+    }
+    // Backward compatibility with older saved values.
+    if (t === "conflicts") return "conflicts_with";
+    if (t === "depends_on" || t === "refines") return "determine";
+    return "enable";
+}
+
+function stepRoleLabel(role: MotifReasoningStepRole | undefined, locale?: AppLocale): string {
+    if (role === "premise") return tr(locale, "前提", "Premise");
+    if (role === "bridge") return tr(locale, "桥接", "Bridge");
+    if (role === "decision") return tr(locale, "决策", "Decision");
+    if (role === "isolated") return tr(locale, "独立", "Isolated");
+    return tr(locale, "步骤", "Step");
+}
+
 function motifPattern(
     motif: ConceptMotif,
     conceptNoById: Map<string, number>
@@ -97,11 +120,12 @@ function buildFallbackView(params: {
     motifs: ConceptMotif[];
     motifLinks: MotifLink[];
     concepts: ConceptItem[];
+    locale?: AppLocale;
 }): MotifReasoningView {
     const conceptById = new Map((params.concepts || []).map((c) => [c.id, c]));
     const conceptNoById = new Map<string, number>();
     (params.concepts || []).forEach((c, idx) => conceptNoById.set(c.id, idx + 1));
-    const motifs = (params.motifs || []).filter((m) => m.status !== "cancelled");
+    const motifs = (params.motifs || []).slice();
     const nodes: MotifReasoningNode[] = motifs.map((m) => {
         const conceptIds = uniq(m.conceptIds || [], 8);
         const conceptTitles = conceptIds.map((id) => {
@@ -141,38 +165,124 @@ function buildFallbackView(params: {
     )
         .map((packed) => {
             const [id, fromMotifId, toMotifId, typeRaw] = packed.split("::");
-            const type =
-                typeRaw === "depends_on" || typeRaw === "conflicts" || typeRaw === "refines"
-                    ? typeRaw
-                    : "supports";
             return {
                 id,
                 from: motifIdToNodeId.get(fromMotifId) || "",
                 to: motifIdToNodeId.get(toMotifId) || "",
-                type,
+                type: normalizeMotifLinkType(typeRaw),
                 confidence: 0.72,
             } as MotifReasoningEdge;
         })
         .filter((e) => validNodeId.has(e.from) && validNodeId.has(e.to) && e.from !== e.to);
 
-    if (!edges.length && nodes.length >= 2) {
-        const sorted = nodes
-            .slice()
-            .sort((a, b) => clamp01(b.confidence, 0.72) - clamp01(a.confidence, 0.72) || a.id.localeCompare(b.id));
-        for (let i = 0; i < sorted.length - 1; i += 1) {
-            const from = sorted[i];
-            const to = sorted[i + 1];
-            edges.push({
-                id: `fallback_${from.id}_${to.id}`,
-                from: from.id,
-                to: to.id,
-                type: "supports",
-                confidence: clamp01((from.confidence + to.confidence) / 2, 0.68),
-            });
-            if (edges.length >= 24) break;
-        }
+    const indeg = new Map<string, number>();
+    const outdeg = new Map<string, number>();
+    const outgoing = new Map<string, string[]>();
+    for (const n of nodes) {
+        indeg.set(n.id, 0);
+        outdeg.set(n.id, 0);
+        outgoing.set(n.id, []);
     }
-    return { nodes, edges };
+    for (const e of edges) {
+        indeg.set(e.to, (indeg.get(e.to) || 0) + 1);
+        outdeg.set(e.from, (outdeg.get(e.from) || 0) + 1);
+        outgoing.get(e.from)?.push(e.to);
+    }
+    const orderedNodeIds: string[] = [];
+    if (edges.length) {
+        const remainingIn = new Map(indeg);
+        const queue = nodes
+            .filter((n) => (remainingIn.get(n.id) || 0) <= 0)
+            .sort((a, b) => b.confidence - a.confidence || a.id.localeCompare(b.id))
+            .map((n) => n.id);
+        const visited = new Set<string>();
+        while (queue.length) {
+            const cur = queue.shift() as string;
+            if (visited.has(cur)) continue;
+            visited.add(cur);
+            orderedNodeIds.push(cur);
+            for (const nxt of outgoing.get(cur) || []) {
+                remainingIn.set(nxt, (remainingIn.get(nxt) || 0) - 1);
+                if ((remainingIn.get(nxt) || 0) <= 0) queue.push(nxt);
+            }
+            queue.sort((a, b) => {
+                const na = nodes.find((x) => x.id === a);
+                const nb = nodes.find((x) => x.id === b);
+                return (nb?.confidence || 0) - (na?.confidence || 0) || a.localeCompare(b);
+            });
+        }
+        for (const n of nodes) {
+            if (!visited.has(n.id)) orderedNodeIds.push(n.id);
+        }
+    } else {
+        orderedNodeIds.push(
+            ...nodes
+                .slice()
+                .sort((a, b) => b.confidence - a.confidence || a.id.localeCompare(b.id))
+                .map((n) => n.id)
+        );
+    }
+    const stepMap = new Map<string, { order: number; role: MotifReasoningStepRole }>();
+    orderedNodeIds.forEach((nodeId, idx) => {
+        const motifId = nodes.find((n) => n.id === nodeId)?.motifId;
+        if (!motifId) return;
+        const inCount = indeg.get(nodeId) || 0;
+        const outCount = outdeg.get(nodeId) || 0;
+        const role: MotifReasoningStepRole =
+            edges.length === 0
+                ? "isolated"
+                : inCount <= 0 && outCount <= 0
+                  ? "isolated"
+                  : inCount <= 0
+                    ? "premise"
+                    : outCount <= 0
+                      ? "decision"
+                      : "bridge";
+        stepMap.set(motifId, { order: idx + 1, role });
+    });
+    const steps = nodes.map((n) => {
+        const slot = stepMap.get(n.motifId);
+        return {
+            id: `step_${n.motifId}`,
+            order: slot?.order || 0,
+            motifId: n.motifId,
+            motifNodeId: n.id,
+            role: slot?.role || "isolated",
+            status: n.status,
+            dependencyClass: n.dependencyClass || n.relation,
+            causalOperator: n.causalOperator,
+            dependsOnMotifIds: edges.filter((e) => e.to === n.id).map((e) => nodes.find((x) => x.id === e.from)?.motifId || "").filter(Boolean),
+            usedConceptIds: (n.conceptIds || []).slice(0, 8),
+            usedConceptTitles: (n.conceptTitles || []).slice(0, 8),
+            explanation: tr(
+                params.locale,
+                `第${slot?.order || 0}步：${n.title}（${stepRoleLabel(slot?.role, params.locale)}）`,
+                `Step ${slot?.order || 0}: ${n.title} (${stepRoleLabel(slot?.role, params.locale)})`
+            ),
+        };
+    });
+    return { nodes, edges, steps };
+}
+
+function structuredStepExplanation(params: {
+    step: MotifReasoningStep;
+    node?: MotifReasoningNode;
+    locale?: AppLocale;
+}): string {
+    const { step, node, locale } = params;
+    const depCount = (step.dependsOnMotifIds || []).length;
+    const depText =
+        depCount > 0
+            ? tr(locale, `依赖 ${depCount} 个前置 motif`, `depends on ${depCount} prior motif(s)`)
+            : tr(locale, "无前置依赖", "no prior dependency");
+    const relation = dependencyLabel(step.dependencyClass || node?.relation, locale);
+    const operator = causalOperatorLabel(step.causalOperator || node?.causalOperator, locale);
+    const role = stepRoleLabel(step.role, locale);
+    return tr(
+        locale,
+        `第${step.order}步 · ${role} · ${relation} / ${operator}；${depText}。`,
+        `Step ${step.order} · ${role} · ${relation} / ${operator}; ${depText}.`
+    );
 }
 
 function statusRank(s: ConceptMotif["status"]): number {
@@ -186,9 +296,9 @@ function statusRank(s: ConceptMotif["status"]): number {
 function edgeColor(type: MotifLink["type"], confidence: number) {
     const c = clamp01(confidence, 0.72);
     const alpha = (0.35 + c * 0.45).toFixed(3);
-    if (type === "conflicts") return `rgba(185, 28, 28, ${alpha})`;
-    if (type === "depends_on") return `rgba(71, 85, 105, ${alpha})`;
-    if (type === "refines") return `rgba(202, 138, 4, ${alpha})`;
+    if (type === "conflicts_with") return `rgba(185, 28, 28, ${alpha})`;
+    if (type === "constraint") return `rgba(71, 85, 105, ${alpha})`;
+    if (type === "determine") return `rgba(202, 138, 4, ${alpha})`;
     return `rgba(37, 99, 235, ${alpha})`;
 }
 
@@ -233,10 +343,10 @@ function causalOperatorLabel(op: ConceptMotif["causalOperator"] | undefined, loc
 }
 
 function edgeTypeLabel(type: MotifLink["type"], locale?: AppLocale) {
-    if (type === "supports") return tr(locale, "supports", "supports");
-    if (type === "depends_on") return tr(locale, "depends_on", "depends_on");
-    if (type === "conflicts") return tr(locale, "conflicts", "conflicts");
-    if (type === "refines") return tr(locale, "refines", "refines");
+    if (type === "enable") return tr(locale, "使能", "enable");
+    if (type === "constraint") return tr(locale, "约束", "constraint");
+    if (type === "determine") return tr(locale, "决定", "determine");
+    if (type === "conflicts_with") return tr(locale, "冲突", "conflicts_with");
     return type;
 }
 
@@ -248,6 +358,7 @@ function layoutReasoningGraph(
 ): {
     nodes: Node<MotifFlowData>[];
     edges: Edge[];
+    steps: NonNullable<MotifReasoningView["steps"]>;
 } {
     const rawNodes = (view?.nodes || []).slice();
     const rawEdges = (view?.edges || []).slice();
@@ -309,6 +420,9 @@ function layoutReasoningGraph(
         byLevel.get(l)!.push(n);
     }
 
+    const stepByMotifId = new Map(
+        ((view?.steps || []) as NonNullable<MotifReasoningView["steps"]>).map((s) => [s.motifId, s])
+    );
     const nodes: Node<MotifFlowData>[] = [];
     const levelKeys = Array.from(byLevel.keys()).sort((a, b) => a - b);
     for (const l of levelKeys) {
@@ -359,6 +473,8 @@ function layoutReasoningGraph(
                     pattern: rebuiltPattern,
                     conceptLabels,
                     sourceRefs: (n.sourceRefs || []).slice(0, 6),
+                    stepOrder: stepByMotifId.get(n.motifId)?.order,
+                    stepRole: stepByMotifId.get(n.motifId)?.role,
                 },
             });
         }
@@ -392,7 +508,7 @@ function layoutReasoningGraph(
             };
         });
 
-    return { nodes, edges };
+    return { nodes, edges, steps: (view?.steps || []) as NonNullable<MotifReasoningView["steps"]> };
 }
 
 const MotifNode = memo(function MotifNode({ data, selected }: NodeProps<Node<MotifFlowData>>) {
@@ -409,6 +525,11 @@ const MotifNode = memo(function MotifNode({ data, selected }: NodeProps<Node<Mot
 
             <div className="MotifReasoningNode__head">
                 <span className="MotifReasoningNode__status">{statusIcon(data.status)}</span>
+                {data.stepOrder ? (
+                    <span className="MotifReasoningNode__conceptTag" title={stepRoleLabel(data.stepRole, locale)}>
+                        {tr(locale, "步骤", "Step")} {data.stepOrder}
+                    </span>
+                ) : null}
                 <div className="MotifReasoningNode__title" title={data.title}>
                     {data.title}
                 </div>
@@ -477,12 +598,17 @@ export function MotifReasoningCanvas(props: {
             motifs: props.motifs || [],
             motifLinks: props.motifLinks || [],
             concepts: props.concepts || [],
+            locale: props.locale,
         });
-    }, [props.reasoningView, props.motifs, props.motifLinks, props.concepts]);
+    }, [props.reasoningView, props.motifs, props.motifLinks, props.concepts, props.locale]);
 
-    const { nodes, edges } = useMemo(
+    const { nodes, edges, steps } = useMemo(
         () => layoutReasoningGraph(resolvedView, props.locale, conceptById, conceptNoById),
         [resolvedView, props.locale, conceptById, conceptNoById]
+    );
+    const nodeByMotifId = useMemo(
+        () => new Map((resolvedView?.nodes || []).map((n) => [n.motifId, n])),
+        [resolvedView]
     );
     const renderedNodes = useMemo(
         () =>
@@ -527,6 +653,37 @@ export function MotifReasoningCanvas(props: {
                 <Background />
                 <Controls />
             </ReactFlow>
+            {steps.length ? (
+                <div className="MotifReasoningCanvas__steps">
+                    <div className="MotifReasoningCanvas__stepsTitle">
+                        {tr(props.locale, "结构化推理步骤（Explanation）", "Structured reasoning steps (explanation)")}
+                    </div>
+                    <div className="MotifReasoningCanvas__stepsList">
+                        {steps
+                            .slice()
+                            .sort((a, b) => a.order - b.order)
+                            .slice(0, 24)
+                            .map((s) => (
+                                <div key={s.id} className={`MotifReasoningCanvas__step status-${s.status}`}>
+                                    <div className="MotifReasoningCanvas__stepHead">
+                                        <span className="MotifReasoningCanvas__stepNo">#{s.order}</span>
+                                        <span className="MotifReasoningCanvas__stepRole">
+                                            {stepRoleLabel(s.role, props.locale)}
+                                        </span>
+                                        <span className="MotifReasoningCanvas__stepMotif">{s.motifId}</span>
+                                    </div>
+                                    <div className="MotifReasoningCanvas__stepText">
+                                        {structuredStepExplanation({
+                                            step: s,
+                                            node: nodeByMotifId.get(s.motifId),
+                                            locale: props.locale,
+                                        })}
+                                    </div>
+                                </div>
+                            ))}
+                    </div>
+                </div>
+            ) : null}
         </div>
     );
 }

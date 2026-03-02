@@ -82,13 +82,16 @@ function rememberWorkingBase(base: string, ok: boolean) {
     }
 }
 
-function resolveApiBases(): string[] {
+function resolveApiBases(preferAbsolute = false): string[] {
     const envBases = parseEnvBases(ENV_BASES_RAW);
     const runtimeBase = readRuntimePreferredBase();
     const inferredHostBase = inferHostApiBase();
-    const bases = [runtimeBase, inferredHostBase, ...envBases, ""]
+    const nonRelativeBases = [runtimeBase, inferredHostBase, ...envBases]
         .map(normalizeBase)
+        .filter(Boolean)
         .filter((x, i, arr) => arr.indexOf(x) === i);
+    if (preferAbsolute && nonRelativeBases.length) return nonRelativeBases;
+    const bases = [...nonRelativeBases, ""].filter((x, i, arr) => arr.indexOf(x) === i);
     return bases.length ? bases : [""];
 }
 
@@ -130,9 +133,10 @@ async function fetchWithBaseFallback(
     path: string,
     opts: RequestInit = {},
     token?: string,
-    mode: "json" | "binary" = "json"
+    mode: "json" | "binary" = "json",
+    options: { preferAbsoluteBase?: boolean } = {}
 ): Promise<{ res: Response; base: string }> {
-    const bases = resolveApiBases();
+    const bases = resolveApiBases(!!options.preferAbsoluteBase);
     let lastErr: any = null;
     for (let i = 0; i < bases.length; i += 1) {
         const base = bases[i];
@@ -180,20 +184,6 @@ async function http<T>(path: string, opts: RequestInit = {}, token?: string): Pr
         throw new Error(text || `HTTP ${res.status}`);
     }
     return (await res.json()) as T;
-}
-
-async function httpBlob(path: string, opts: RequestInit = {}, token?: string): Promise<Blob> {
-    const { res } = await fetchWithBaseFallback(path, opts, token, "binary");
-    if (!res.ok) {
-        const text = await res.text().catch(() => "");
-        throw new Error(text || `HTTP ${res.status}`);
-    }
-    const ct = String(res.headers.get("content-type") || "").toLowerCase();
-    if (ct.includes("text/html")) {
-        const text = await res.text().catch(() => "");
-        throw new Error(text || "Unexpected HTML response when downloading binary file");
-    }
-    return res.blob();
 }
 
 /** --------- SSE（POST）流式 turn --------- */
@@ -457,27 +447,35 @@ export const api = {
                 path: `${basePath}/export`,
                 opts: { method: "GET", headers: { Accept: "application/pdf" } },
             },
-            {
-                path: `${basePath}/export.pdf`,
-                opts: { method: "POST", body: "{}", headers: { Accept: "application/pdf" } },
-            },
-            {
-                path: `${basePath}/export.pdf`,
-                opts: { method: "GET", headers: { Accept: "application/pdf" } },
-            },
         ];
 
         const errors: string[] = [];
         for (const attempt of attempts) {
             try {
-                return await httpBlob(attempt.path, attempt.opts, token);
+                const { res } = await fetchWithBaseFallback(
+                    attempt.path,
+                    attempt.opts,
+                    token,
+                    "binary",
+                    { preferAbsoluteBase: true }
+                );
+                if (!res.ok) {
+                    const text = await res.text().catch(() => "");
+                    throw new Error(text || `HTTP ${res.status}`);
+                }
+                const ct = String(res.headers.get("content-type") || "").toLowerCase();
+                if (ct.includes("text/html")) {
+                    const text = await res.text().catch(() => "");
+                    throw new Error(text || "Unexpected HTML response when downloading binary file");
+                }
+                return res.blob();
             } catch (err: any) {
                 const message = String(err?.message || err || "").trim();
                 errors.push(`${attempt.opts.method || "GET"} ${attempt.path}: ${message}`);
                 // If server returns a real backend error (not route-miss/html fallback), stop fallback and surface it.
                 if (
                     message &&
-                    !/Cannot (GET|POST)\s+\/api\/conversations\/.+\/travel-plan\/export(?:\.pdf)?/i.test(message) &&
+                    !/Cannot (GET|POST)\s+\/api\/conversations\/.+\/travel-plan\/export/i.test(message) &&
                     !/Unexpected HTML response|returned HTML instead of PDF/i.test(message) &&
                     !/HTTP 404/i.test(message)
                 ) {

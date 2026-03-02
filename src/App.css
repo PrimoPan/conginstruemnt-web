@@ -1083,6 +1083,12 @@ body {
   opacity: 0.78;
 }
 
+.MotifReasoningNode.status-cancelled {
+  border-color: rgba(148, 163, 184, 0.36);
+  background: rgba(248, 250, 252, 0.95);
+  opacity: 0.72;
+}
+
 .MotifReasoningNode.is-selected {
   box-shadow: 0 0 0 2px rgba(234, 88, 12, 0.22), 0 6px 20px rgba(124, 45, 18, 0.15);
 }
@@ -1181,6 +1187,87 @@ body {
   height: 8px !important;
   border: none !important;
   background: #1f2937 !important;
+}
+
+.MotifReasoningCanvas__steps {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  width: min(460px, calc(100% - 20px));
+  max-height: 38%;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.36);
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 6px 20px rgba(15, 23, 42, 0.08);
+  padding: 8px;
+  z-index: 7;
+  display: grid;
+  gap: 6px;
+}
+
+.MotifReasoningCanvas__stepsTitle {
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(15, 23, 42, 0.8);
+}
+
+.MotifReasoningCanvas__stepsList {
+  overflow: auto;
+  display: grid;
+  gap: 6px;
+}
+
+.MotifReasoningCanvas__step {
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.34);
+  background: rgba(248, 250, 252, 0.94);
+  padding: 6px 8px;
+  display: grid;
+  gap: 4px;
+}
+
+.MotifReasoningCanvas__step.status-deprecated {
+  border-color: rgba(220, 38, 38, 0.34);
+  background: rgba(254, 242, 242, 0.95);
+}
+
+.MotifReasoningCanvas__step.status-uncertain {
+  border-color: rgba(217, 119, 6, 0.32);
+  background: rgba(255, 251, 235, 0.95);
+}
+
+.MotifReasoningCanvas__stepHead {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+}
+
+.MotifReasoningCanvas__stepNo {
+  font-weight: 700;
+  color: rgba(30, 41, 59, 0.86);
+}
+
+.MotifReasoningCanvas__stepRole {
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.42);
+  padding: 1px 6px;
+  color: rgba(30, 41, 59, 0.72);
+}
+
+.MotifReasoningCanvas__stepMotif {
+  color: rgba(71, 85, 105, 0.8);
+  margin-left: auto;
+  max-width: 42%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.MotifReasoningCanvas__stepText {
+  font-size: 11px;
+  line-height: 1.4;
+  color: rgba(30, 41, 59, 0.82);
 }
 
 .ConceptPanel__footer {
