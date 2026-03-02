@@ -28,37 +28,38 @@ jobs:
       - name: Build frontend
         run: npm run build
 
-      - name: Prepare remote build dir
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          port: ${{ secrets.DEPLOY_PORT || 22 }}
-          script: |
-            set -e
-            mkdir -p /home/ubuntu/conginstrument-web
-            rm -rf /home/ubuntu/conginstrument-web/build
-
-      - name: Upload build artifact to server
+      - name: Upload build artifact to server (attempt 1)
+        id: upload_build_1
+        continue-on-error: true
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           port: ${{ secrets.DEPLOY_PORT || 22 }}
+          timeout: 180s
+          command_timeout: 20m
           source: build
           target: /home/ubuntu/conginstrument-web/
+          overwrite: true
 
-      - name: Verify deployed build
-        uses: appleboy/ssh-action@v1.0.3
+      - name: Upload build artifact to server (attempt 2)
+        id: upload_build_2
+        if: steps.upload_build_1.outcome == 'failure'
+        uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           port: ${{ secrets.DEPLOY_PORT || 22 }}
-          script: |
-            set -e
-            test -f /home/ubuntu/conginstrument-web/build/index.html
-            echo "${{ github.sha }}" > /home/ubuntu/conginstrument-web/build/.deployed_sha
-            ls -lah /home/ubuntu/conginstrument-web/build | head -n 20
+          timeout: 180s
+          command_timeout: 20m
+          source: build
+          target: /home/ubuntu/conginstrument-web/
+          overwrite: true
+
+      - name: Fail if upload failed twice
+        if: steps.upload_build_1.outcome == 'failure' && steps.upload_build_2.outcome == 'failure'
+        run: |
+          echo "ERROR: front-end artifact upload failed twice"
+          exit 1
