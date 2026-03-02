@@ -9,7 +9,22 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: SSH deploy frontend
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Prepare remote build dir
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.DEPLOY_HOST }}
@@ -18,38 +33,27 @@ jobs:
           port: ${{ secrets.DEPLOY_PORT || 22 }}
           script: |
             set -e
-            retry() {
-              local max=6
-              local delay=3
-              local n=1
-              while true; do
-                if "$@"; then
-                  return 0
-                fi
-                if [ "$n" -ge "$max" ]; then
-                  echo "ERROR: command failed after ${n} attempts: $*"
-                  return 1
-                fi
-                echo "WARN: command failed (attempt ${n}/${max}), retrying in ${delay}s: $*"
-                sleep "$delay"
-                n=$((n + 1))
-                delay=$((delay * 2))
-              done
-            }
-            export PATH="/usr/local/bin:/usr/bin:/bin:$PATH"
-            if [ -s "$HOME/.nvm/nvm.sh" ]; then
-              . "$HOME/.nvm/nvm.sh"
-            fi
-            if command -v nvm >/dev/null 2>&1; then
-              nvm use --lts >/dev/null 2>&1 || nvm use default >/dev/null 2>&1 || true
-            fi
-            if ! command -v npm >/dev/null 2>&1; then
-              echo "ERROR: npm not found on remote host PATH=$PATH"
-              exit 127
-            fi
-            cd /home/ubuntu/conginstrument-web
-            retry git -c http.version=HTTP/1.1 fetch --depth=1 origin main
-            git checkout main
-            git reset --hard origin/main
-            retry npm ci
-            retry npm run build
+            mkdir -p /home/ubuntu/conginstrument-web
+            rm -rf /home/ubuntu/conginstrument-web/build
+
+      - name: Upload build artifact to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          source: build
+          target: /home/ubuntu/conginstrument-web/
+
+      - name: Verify deployed build
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          script: |
+            set -e
+            test -f /home/ubuntu/conginstrument-web/build/index.html
+            ls -lah /home/ubuntu/conginstrument-web/build | head -n 20
