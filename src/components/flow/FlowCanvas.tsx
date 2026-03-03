@@ -37,6 +37,8 @@ export function FlowCanvas(props: {
     onEdgesChange: ReturnType<typeof useEdgesState<Edge>>[2];
     onNodeDragStart: (e: any, node: Node<FlowNodeData>) => void;
     onNodeDragStop: (e: any, node: Node<FlowNodeData>) => void;
+    onSelectionDragStart: (e: any, nodes: Node<FlowNodeData>[]) => void;
+    onSelectionDragStop: (e: any, nodes: Node<FlowNodeData>[]) => void;
     onNodeClick: (nodeId: string) => void;
     onNodeHover: (focus: NodeEvidenceFocus | null) => void;
     onEdgeClick: (edgeId: string) => void;
@@ -52,6 +54,8 @@ export function FlowCanvas(props: {
             onEdgesChange={props.onEdgesChange}
             onNodeDragStart={props.onNodeDragStart}
             onNodeDragStop={props.onNodeDragStop}
+            onSelectionDragStart={props.onSelectionDragStart}
+            onSelectionDragStop={props.onSelectionDragStop}
             onNodeClick={(_, node) => props.onNodeClick(node.id)}
             onNodeMouseEnter={(_, node) => {
                 const terms = (node.data?.evidenceIds || [])

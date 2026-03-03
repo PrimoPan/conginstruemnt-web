@@ -24,6 +24,7 @@ import { ConceptPanel } from "./components/ConceptPanel";
 const emptyGraph: CDG = { id: "", version: 0, nodes: [], edges: [] };
 const emptyMotifReasoningView: MotifReasoningView = { nodes: [], edges: [] };
 const LOCALE_STORAGE_KEY = "ci_locale";
+const CONCEPT_PANEL_COLLAPSED_STORAGE_KEY = "ci_concept_panel_collapsed";
 
 function clamp01(v: any, fallback = 0.7) {
   const n = Number(v);
@@ -149,6 +150,9 @@ export default function App() {
   const [savingGraph, setSavingGraph] = useState(false);
   const [graphGenerating, setGraphGenerating] = useState(false);
   const [exportingPlan, setExportingPlan] = useState(false);
+  const [conceptPanelCollapsed, setConceptPanelCollapsed] = useState<boolean>(() => {
+    return localStorage.getItem(CONCEPT_PANEL_COLLAPSED_STORAGE_KEY) === "1";
+  });
   const loggedIn = !!token;
   const en = locale === "en-US";
   const tr = (zh: string, enText: string) => (en ? enText : zh);
@@ -521,6 +525,15 @@ export default function App() {
 
   const disabled = !token || !cid;
   const exportPlanDisabled = disabled || messages.length === 0 || graphGenerating;
+  const mainCls = conceptPanelCollapsed ? "Main Main--conceptCollapsed" : "Main";
+
+  function toggleConceptPanelCollapsed() {
+    setConceptPanelCollapsed((prev) => {
+      const next = !prev;
+      localStorage.setItem(CONCEPT_PANEL_COLLAPSED_STORAGE_KEY, next ? "1" : "0");
+      return next;
+    });
+  }
 
   return (
       <div className="App">
@@ -543,7 +556,7 @@ export default function App() {
             exportPlanDisabled={exportPlanDisabled}
         />
 
-        <div className="Main">
+        <div className={mainCls}>
           <div className="Left">
             <ChatPanel
                 locale={locale}
@@ -555,28 +568,30 @@ export default function App() {
             />
           </div>
 
-          <div className="Center">
-            <ConceptPanel
-                locale={locale}
-                concepts={conceptsView}
-                motifs={motifs}
-                activeConceptId={activeConceptId}
-                activeMotifId={activeMotifId}
-                saving={savingGraph}
-                onSelect={(conceptId) => {
-                  setActiveConceptId(conceptId);
-                  setActiveMotifId("");
-                }}
-                onSelectMotif={(motifId) => {
-                  setActiveMotifId(motifId);
-                }}
-                onClearSelect={() => setActiveConceptId("")}
-                onClearMotifSelect={() => setActiveMotifId("")}
-                onEditConceptNode={onEditConceptNode}
-                onPatchConcept={onPatchConcept}
-                onPatchMotif={onPatchMotif}
-            />
-          </div>
+          {!conceptPanelCollapsed ? (
+            <div className="Center">
+              <ConceptPanel
+                  locale={locale}
+                  concepts={conceptsView}
+                  motifs={motifs}
+                  activeConceptId={activeConceptId}
+                  activeMotifId={activeMotifId}
+                  saving={savingGraph}
+                  onSelect={(conceptId) => {
+                    setActiveConceptId(conceptId);
+                    setActiveMotifId("");
+                  }}
+                  onSelectMotif={(motifId) => {
+                    setActiveMotifId(motifId);
+                  }}
+                  onClearSelect={() => setActiveConceptId("")}
+                  onClearMotifSelect={() => setActiveMotifId("")}
+                  onEditConceptNode={onEditConceptNode}
+                  onPatchConcept={onPatchConcept}
+                  onPatchMotif={onPatchMotif}
+              />
+            </div>
+          ) : null}
 
           <div className="Right">
             <FlowPanel
@@ -600,6 +615,8 @@ export default function App() {
                 focusNodeId={focusNodeId}
                 onFocusNodeHandled={() => setFocusNodeId("")}
                 onDraftGraphChange={setDraftGraphPreview}
+                conceptPanelCollapsed={conceptPanelCollapsed}
+                onToggleConceptPanel={toggleConceptPanelCollapsed}
             />
           </div>
         </div>

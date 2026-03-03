@@ -21,7 +21,6 @@ import { MotifReasoningCanvas } from "./flow/MotifReasoningCanvas";
 import {
     EDITABLE_PARENT_EDGE_TYPES,
     deleteNodeAndReconnect,
-    ensureNodeUi,
     findDropParent,
     hasPath,
     newEdgeId,
@@ -30,6 +29,7 @@ import {
     parseJsonValue,
     pickRootGoalId,
 } from "./flow/graphDraftUtils";
+import { makeDragStartSnapshot, persistDraggedNodePositions, pickMovedNodes } from "./flow/dragPersistence";
 
 const nodeTypes = { cdgNode: CdgFlowNode };
 
@@ -96,6 +96,8 @@ export function FlowPanel(props: {
         opts?: { requestAdvice?: boolean; advicePrompt?: string }
     ) => Promise<void> | void;
     savingGraph?: boolean;
+    conceptPanelCollapsed: boolean;
+    onToggleConceptPanel: () => void;
 }) {
     const {
         locale,
@@ -116,6 +118,8 @@ export function FlowPanel(props: {
         onSelectConcept,
         onSaveGraph,
         savingGraph,
+        conceptPanelCollapsed,
+        onToggleConceptPanel,
     } = props;
     const en = locale === "en-US";
     const tr = (zh: string, enText: string) => (en ? enText : zh);
@@ -126,6 +130,7 @@ export function FlowPanel(props: {
     const [selectedEdgeId, setSelectedEdgeId] = useState<string>("");
     const [saveError, setSaveError] = useState("");
     const dragStartRef = useRef<Record<string, { x: number; y: number }>>({});
+    const selectionDragNodeIdsRef = useRef<string[]>([]);
     const draftGraphRef = useRef<CDG>(normalizeGraphClient(graph));
 
     const { nodes, edges, setNodes, setEdges, onNodesChange, onEdgesChange } = useFlowState();
@@ -161,6 +166,8 @@ export function FlowPanel(props: {
         const merged = mergeIncomingGraphWithLocalUi(normalized, draftGraphRef.current);
         setDraftGraph(merged);
         draftGraphRef.current = merged;
+        dragStartRef.current = {};
+        selectionDragNodeIdsRef.current = [];
         setDirty(false);
         setSelectedNodeId("");
         setSelectedEdgeId("");
@@ -313,28 +320,56 @@ export function FlowPanel(props: {
         setSelectedEdgeId("");
     }, [en, nodes, selectedNodeId, updateDraftGraph]);
 
-    const onNodeDragStart = useCallback((evt: any, node: any) => {
-        dragStartRef.current[node.id] = { x: node.position.x, y: node.position.y };
+    const onNodeDragStart = useCallback((_: any, node: any) => {
+        dragStartRef.current = {
+            ...dragStartRef.current,
+            ...makeDragStartSnapshot([node]),
+        };
+    }, []);
+
+    const onSelectionDragStart = useCallback((_: any, draggedNodes: any[]) => {
+        selectionDragNodeIdsRef.current = (draggedNodes || []).map((node) => node.id);
+        dragStartRef.current = {
+            ...dragStartRef.current,
+            ...makeDragStartSnapshot(draggedNodes || []),
+        };
+    }, []);
+
+    const onSelectionDragStop = useCallback((_: any, draggedNodes: any[]) => {
+        const movedNodes = pickMovedNodes(draggedNodes || [], dragStartRef.current, 6);
+        for (const node of draggedNodes || []) delete dragStartRef.current[node.id];
+        selectionDragNodeIdsRef.current = [];
+        if (!movedNodes.length) return;
+        const prev = draftGraphRef.current;
+        const nextGraph = persistDraggedNodePositions(prev, movedNodes);
+        if (nextGraph === prev) return;
+        draftGraphRef.current = nextGraph;
+        setDraftGraph(nextGraph);
+        setDirty(true);
     }, []);
 
     const onNodeDragStop = useCallback(
         (_: any, dragged: any) => {
+            const selectionIds = selectionDragNodeIdsRef.current;
+            const isMultiSelectionDrag = selectionIds.length > 1 && selectionIds.includes(dragged.id);
+            if (isMultiSelectionDrag) return;
+
             const start = dragStartRef.current[dragged.id];
             delete dragStartRef.current[dragged.id];
+            selectionDragNodeIdsRef.current = [];
+
             const moveDist = start
                 ? Math.hypot(dragged.position.x - start.x, dragged.position.y - start.y)
                 : 999;
             if (moveDist < 6) return;
 
-            const droppedParentId = moveDist > 24 ? findDropParent(dragged, nodes) : null;
             const prev = draftGraphRef.current;
-            const nextNodes = (prev.nodes || []).map((n) =>
-                    n.id === dragged.id ? ensureNodeUi(n, dragged.position.x, dragged.position.y) : n
-                );
+            const movedNodes = pickMovedNodes([dragged], start ? { [dragged.id]: start } : {}, 6);
+            let nextGraph = persistDraggedNodePositions(prev, movedNodes);
+            const droppedParentId = moveDist > 24 ? findDropParent(dragged, nodes) : null;
 
-            let nextGraph: CDG = { ...prev, nodes: nextNodes };
             if (droppedParentId && droppedParentId !== dragged.id) {
-                const incomingRemoved = (prev.edges || []).filter(
+                const incomingRemoved = (nextGraph.edges || []).filter(
                     (e) => !(e.to === dragged.id && EDITABLE_PARENT_EDGE_TYPES.includes(e.type))
                 );
                 const already = incomingRemoved.some((e) => e.from === droppedParentId && e.to === dragged.id);
@@ -349,9 +384,10 @@ export function FlowPanel(props: {
                         });
                     }
                 }
-                nextGraph = { ...prev, nodes: nextNodes, edges: incomingRemoved };
+                nextGraph = { ...nextGraph, edges: incomingRemoved };
             }
 
+            if (nextGraph === prev) return;
             draftGraphRef.current = nextGraph;
             setDraftGraph(nextGraph);
             setDirty(true);
@@ -398,9 +434,16 @@ export function FlowPanel(props: {
                         {tr("Motif 推理", "Motif Reasoning")}
                     </button>
                 </div>
-                {canvasView === "concept" && generatingGraph ? (
-                    <span className="FlowStatusTag">{tr("意图分析图生成中", "Generating intent graph")}</span>
-                ) : null}
+                <div className="FlowPanel__headerActions">
+                    <button type="button" className="FlowPanel__panelToggle" onClick={onToggleConceptPanel}>
+                        {conceptPanelCollapsed
+                            ? tr("展开 Concept 列表", "Expand Concept Panel")
+                            : tr("收起 Concept 列表", "Collapse Concept Panel")}
+                    </button>
+                    {canvasView === "concept" && generatingGraph ? (
+                        <span className="FlowStatusTag">{tr("意图分析图生成中", "Generating intent graph")}</span>
+                    ) : null}
+                </div>
             </div>
             <div className="FlowCanvas">
                 {canvasView === "concept" ? (
@@ -433,6 +476,8 @@ export function FlowPanel(props: {
                             onEdgesChange={onEdgesChange}
                             onNodeDragStart={onNodeDragStart}
                             onNodeDragStop={onNodeDragStop}
+                            onSelectionDragStart={onSelectionDragStart}
+                            onSelectionDragStop={onSelectionDragStop}
                             onNodeClick={(nodeId) => {
                                 setSelectedNodeId(nodeId);
                                 setSelectedEdgeId("");

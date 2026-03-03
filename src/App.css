@@ -80,6 +80,10 @@ body {
   padding: 12px;
 }
 
+.Main.Main--conceptCollapsed {
+  grid-template-columns: minmax(420px, 1fr) minmax(760px, 1.7fr);
+}
+
 .Left, .Center, .Right {
   min-height: 0;
   height: 100%;
@@ -124,6 +128,12 @@ body {
   gap: 6px;
 }
 
+.FlowPanel__headerActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .FlowPanel__headerTab {
   height: 30px;
   border-radius: 10px;
@@ -140,6 +150,23 @@ body {
   border-color: rgba(217, 119, 6, 0.45);
   color: rgba(146, 64, 14, 0.95);
   background: rgba(254, 243, 199, 0.74);
+}
+
+.FlowPanel__panelToggle {
+  height: 30px;
+  border-radius: 10px;
+  border: 1px solid rgba(15, 23, 42, 0.2);
+  background: rgba(255, 255, 255, 0.95);
+  color: rgba(15, 23, 42, 0.76);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 0 10px;
+  cursor: pointer;
+}
+
+.FlowPanel__panelToggle:hover {
+  border-color: rgba(15, 23, 42, 0.36);
+  color: rgba(15, 23, 42, 0.92);
 }
 
 .FlowStatusTag {
@@ -1365,6 +1392,10 @@ body {
 @media (max-width: 1440px) {
   .Main {
     grid-template-columns: minmax(380px, 1fr) 320px minmax(500px, 1.2fr);
+  }
+
+  .Main.Main--conceptCollapsed {
+    grid-template-columns: minmax(380px, 1fr) minmax(640px, 1.45fr);
   }
 }
 
