@@ -1,10 +1,8 @@
 export type ConceptType =
-    | "goal"
     | "constraint"
     | "preference"
     | "belief"
-    | "fact"
-    | "question";
+    | "factual_assertion";
 
 export type Strength = "hard" | "soft";
 export type Status = "proposed" | "confirmed" | "rejected" | "disputed";
@@ -60,6 +58,7 @@ export type CDGNode = {
     revisionHistory?: RevisionRecord[];
     priority?: number;
     successCriteria?: string[];
+    validation_status?: ConceptValidationStatus;
 };
 
 export type CDGEdge = {
@@ -109,11 +108,18 @@ export type ConversationDetail = {
     locale?: AppLocale;
     systemPrompt: string;
     graph: CDG;
+    concept_graph?: CDG;
     concepts?: ConceptItem[];
     motifs?: ConceptMotif[];
     motifLinks?: MotifLink[];
+    motif_graph?: {
+        motifs: ConceptMotif[];
+        motif_links: MotifLink[];
+    };
     motifReasoningView?: MotifReasoningView;
+    reasoning_steps?: ReasoningStepPayload[];
     contexts?: ContextItem[];
+    validation_status?: ConceptValidationStatus;
     travelPlanState?: TravelPlanState | null;
 };
 
@@ -123,11 +129,18 @@ export type GraphSaveResponse = {
     conversationId: string;
     locale?: AppLocale;
     graph: CDG;
+    concept_graph?: CDG;
     concepts?: ConceptItem[];
     motifs?: ConceptMotif[];
     motifLinks?: MotifLink[];
+    motif_graph?: {
+        motifs: ConceptMotif[];
+        motif_links: MotifLink[];
+    };
     motifReasoningView?: MotifReasoningView;
+    reasoning_steps?: ReasoningStepPayload[];
     contexts?: ContextItem[];
+    validation_status?: ConceptValidationStatus;
     travelPlanState?: TravelPlanState | null;
     updatedAt: string;
     assistantText?: string;
@@ -138,11 +151,18 @@ export type ConceptSaveResponse = {
     conversationId: string;
     locale?: AppLocale;
     graph: CDG;
+    concept_graph?: CDG;
     concepts: ConceptItem[];
     motifs?: ConceptMotif[];
     motifLinks?: MotifLink[];
+    motif_graph?: {
+        motifs: ConceptMotif[];
+        motif_links: MotifLink[];
+    };
     motifReasoningView?: MotifReasoningView;
+    reasoning_steps?: ReasoningStepPayload[];
     contexts?: ContextItem[];
+    validation_status?: ConceptValidationStatus;
     travelPlanState?: TravelPlanState | null;
     updatedAt: string;
 };
@@ -165,11 +185,18 @@ export type TurnResponse = {
     assistantText: string;
     graphPatch: GraphPatch;
     graph: CDG;
+    concept_graph?: CDG;
     concepts?: ConceptItem[];
     motifs?: ConceptMotif[];
     motifLinks?: MotifLink[];
+    motif_graph?: {
+        motifs: ConceptMotif[];
+        motif_links: MotifLink[];
+    };
     motifReasoningView?: MotifReasoningView;
+    reasoning_steps?: ReasoningStepPayload[];
     contexts?: ContextItem[];
+    validation_status?: ConceptValidationStatus;
     travelPlanState?: TravelPlanState | null;
     conflictGate?: ConflictGatePayload | null;
 };
@@ -252,14 +279,14 @@ export type ConceptKind =
 
 export type ConceptExtractionStage =
     | "identification"
-    | "disambiguation"
-    | "validation";
+    | "disambiguation";
 
 export const CONCEPT_EXTRACTION_STAGES: ConceptExtractionStage[] = [
     "identification",
     "disambiguation",
-    "validation",
 ];
+
+export type ConceptValidationStatus = "unasked" | "pending" | "resolved";
 
 export type ConceptFamily =
     | "goal"
@@ -281,6 +308,10 @@ export type ConceptFamily =
 export type ConceptItem = {
     id: string;
     kind: ConceptKind;
+    validationStatus: ConceptValidationStatus;
+    extractionStage: ConceptExtractionStage;
+    polarity: "positive" | "negative";
+    scope: string;
     family: ConceptFamily;
     semanticKey: string;
     title: string;
@@ -291,6 +322,7 @@ export type ConceptItem = {
     evidenceTerms: string[];
     sourceMsgIds: string[];
     motifIds?: string[];
+    migrationHistory?: string[];
     locked: boolean;
     paused: boolean;
     updatedAt: string;
@@ -308,9 +340,18 @@ export type MotifCausalOperator =
 
 export type ConceptMotif = {
     id: string;
+    motif_id: string;
+    motif_type: "enable" | "constraint" | "determine";
     templateKey: string;
     motifType: ConceptMotifType;
     relation: EdgeType;
+    roles: {
+        sources: string[];
+        target: string;
+    };
+    scope: string;
+    aliases: string[];
+    concept_bindings: string[];
     conceptIds: string[];
     anchorConceptId: string;
     title: string;
@@ -338,7 +379,7 @@ export type ConceptMotif = {
     updatedAt: string;
 };
 
-export type MotifLinkType = "enable" | "constraint" | "determine" | "conflicts_with";
+export type MotifLinkType = "precedes" | "supports" | "conflicts_with" | "refines";
 
 export type MotifLink = {
     id: string;
@@ -378,6 +419,11 @@ export type MotifReasoningEdge = {
 export type MotifReasoningStepRole = "premise" | "bridge" | "decision" | "isolated";
 
 export type MotifReasoningStep = {
+    step_id: string;
+    summary: string;
+    motif_ids: string[];
+    concept_ids: string[];
+    depends_on: string[];
     id: string;
     order: number;
     motifId: string;
@@ -390,6 +436,14 @@ export type MotifReasoningStep = {
     usedConceptIds: string[];
     usedConceptTitles: string[];
     explanation: string;
+};
+
+export type ReasoningStepPayload = {
+    step_id: string;
+    summary: string;
+    motif_ids: string[];
+    concept_ids: string[];
+    depends_on: string[];
 };
 
 export type MotifReasoningView = {

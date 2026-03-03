@@ -83,12 +83,10 @@ export function FlowInspector(props: {
                         value={current.type}
                         onChange={(e) => onPatchNode(current.id, { type: e.target.value as any })}
                     >
-                        <option value="goal">goal</option>
+                        <option value="belief">belief</option>
                         <option value="constraint">constraint</option>
                         <option value="preference">preference</option>
-                        <option value="fact">fact</option>
-                        <option value="belief">belief</option>
-                        <option value="question">question</option>
+                        <option value="factual_assertion">factual_assertion</option>
                     </select>
                 </label>
                 <label className="FlowInspector__fieldLabel">

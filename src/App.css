@@ -1205,16 +1205,59 @@ body {
   gap: 6px;
 }
 
+.MotifReasoningCanvas__steps.is-collapsed {
+  max-height: none;
+}
+
+.MotifReasoningCanvas__stepsHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 .MotifReasoningCanvas__stepsTitle {
   font-size: 12px;
   font-weight: 700;
   color: rgba(15, 23, 42, 0.8);
 }
 
+.MotifReasoningCanvas__stepsActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.MotifReasoningCanvas__stepsBtn {
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  background: rgba(248, 250, 252, 0.95);
+  color: rgba(30, 41, 59, 0.85);
+  border-radius: 999px;
+  font-size: 11px;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+
+.MotifReasoningCanvas__stepsBtn.is-active {
+  border-color: rgba(37, 99, 235, 0.42);
+  background: rgba(239, 246, 255, 0.95);
+  color: rgba(30, 64, 175, 0.9);
+}
+
 .MotifReasoningCanvas__stepsList {
   overflow: auto;
   display: grid;
   gap: 6px;
+}
+
+.MotifReasoningCanvas__stepsSummary {
+  font-size: 11px;
+  line-height: 1.45;
+  color: rgba(30, 41, 59, 0.72);
+  border: 1px dashed rgba(148, 163, 184, 0.45);
+  border-radius: 10px;
+  background: rgba(248, 250, 252, 0.9);
+  padding: 8px 10px;
 }
 
 .MotifReasoningCanvas__step {

@@ -18,7 +18,7 @@ function miniMapNodeColor(node: Node<FlowNodeData>) {
     if (sev === "high") return "#dc2626";
     if (sev === "medium") return "#d97706";
     if (sev === "low") return "#2563eb";
-    if (node?.data?.nodeType === "goal") return "#111827";
+    if (node?.data?.nodeType === "belief" && node?.data?.layer === "intent") return "#111827";
     return "#9ca3af";
 }
 

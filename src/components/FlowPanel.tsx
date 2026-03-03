@@ -289,7 +289,7 @@ export function FlowPanel(props: {
             createdId = id;
             const node: CDGNode = {
                 id,
-                type: "fact",
+                type: "factual_assertion",
                 layer: "requirement",
                 statement: en ? "New node: edit me" : "新节点：请编辑",
                 status: "proposed",

@@ -56,6 +56,71 @@ function makeId(prefix = "m") {
   return `${prefix}_${Date.now()}_${Math.random().toString(16).slice(2)}`;
 }
 
+function normalizeReasoningViewPayload(
+    view: MotifReasoningView | undefined,
+    reasoningSteps: any
+): MotifReasoningView {
+  const base: MotifReasoningView = view && typeof view === "object"
+      ? {
+        nodes: Array.isArray(view.nodes) ? view.nodes : [],
+        edges: Array.isArray(view.edges) ? view.edges : [],
+        steps: Array.isArray((view as any).steps) ? (view as any).steps : [],
+      }
+      : { nodes: [], edges: [], steps: [] };
+
+  if (Array.isArray(base.steps) && base.steps.length) return base;
+  if (!Array.isArray(reasoningSteps) || !reasoningSteps.length) return base;
+
+  return {
+    ...base,
+    steps: reasoningSteps.map((s: any, idx: number) => ({
+      step_id: String(s?.step_id || `S${idx + 1}`),
+      summary: String(s?.summary || "").trim(),
+      motif_ids: Array.isArray(s?.motif_ids) ? s.motif_ids : [],
+      concept_ids: Array.isArray(s?.concept_ids) ? s.concept_ids : [],
+      depends_on: Array.isArray(s?.depends_on) ? s.depends_on : [],
+      id: String(s?.step_id || `S${idx + 1}`),
+      order: idx + 1,
+      motifId: String(Array.isArray(s?.motif_ids) ? s.motif_ids[0] || "" : ""),
+      motifNodeId: "",
+      role: "isolated",
+      status: "active",
+      dependsOnMotifIds: Array.isArray(s?.depends_on) ? s.depends_on : [],
+      usedConceptIds: Array.isArray(s?.concept_ids) ? s.concept_ids : [],
+      usedConceptTitles: [],
+      explanation: String(s?.summary || "").trim(),
+    })),
+  };
+}
+
+function payloadMotifs(payload: any): ConceptMotif[] {
+  if (Array.isArray(payload?.motifs)) return payload.motifs;
+  if (Array.isArray(payload?.motif_graph?.motifs)) return payload.motif_graph.motifs;
+  return [];
+}
+
+function payloadMotifLinks(payload: any): MotifLink[] {
+  const rawLinks = Array.isArray(payload?.motifLinks)
+      ? payload.motifLinks
+      : Array.isArray(payload?.motif_graph?.motif_links)
+          ? payload.motif_graph.motif_links
+          : [];
+  return rawLinks.map((link: any) => {
+    const rawType = String(link?.type || "").trim().toLowerCase();
+    const type: MotifLink["type"] =
+        rawType === "precedes" || rawType === "supports" || rawType === "conflicts_with" || rawType === "refines"
+            ? rawType
+            : rawType === "depends_on" || rawType === "determine"
+                ? "precedes"
+                : rawType === "enable" || rawType === "support"
+                    ? "supports"
+                    : rawType === "constraint" || rawType === "conflicts"
+                        ? "conflicts_with"
+                        : "supports";
+    return { ...link, type };
+  });
+}
+
 export default function App() {
   const [username, setUsername] = useState("test");
   const [locale, setLocale] = useState<AppLocale>(() => {
@@ -111,9 +176,11 @@ export default function App() {
         setGraph(safeGraph);
         setDraftGraphPreview(safeGraph);
         setConcepts(Array.isArray(conv.concepts) ? conv.concepts : []);
-        setMotifs(Array.isArray(conv.motifs) ? conv.motifs : []);
-        setMotifLinks(Array.isArray(conv.motifLinks) ? conv.motifLinks : []);
-        setMotifReasoningView(conv.motifReasoningView || emptyMotifReasoningView);
+        setMotifs(payloadMotifs(conv));
+        setMotifLinks(payloadMotifLinks(conv));
+        setMotifReasoningView(
+            normalizeReasoningViewPayload(conv.motifReasoningView || emptyMotifReasoningView, (conv as any)?.reasoning_steps)
+        );
         setContexts(Array.isArray(conv.contexts) ? conv.contexts : []);
         setConceptsDirty(false);
         setActiveConceptId("");
@@ -185,9 +252,11 @@ export default function App() {
       setGraph(safeGraph);
       setDraftGraphPreview(safeGraph);
       setConcepts(Array.isArray(r.concepts) ? r.concepts : []);
-      setMotifs(Array.isArray(r.motifs) ? r.motifs : []);
-      setMotifLinks(Array.isArray(r.motifLinks) ? r.motifLinks : []);
-      setMotifReasoningView(r.motifReasoningView || emptyMotifReasoningView);
+      setMotifs(payloadMotifs(r));
+      setMotifLinks(payloadMotifLinks(r));
+      setMotifReasoningView(
+          normalizeReasoningViewPayload(r.motifReasoningView || emptyMotifReasoningView, (r as any)?.reasoning_steps)
+      );
       setContexts(Array.isArray(r.contexts) ? r.contexts : []);
       setConceptsDirty(false);
     } finally {
@@ -253,9 +322,11 @@ export default function App() {
             setConcepts(out.concepts);
             setConceptsDirty(false);
           }
-          if (Array.isArray(out?.motifs)) setMotifs(out.motifs);
-          if (Array.isArray(out?.motifLinks)) setMotifLinks(out.motifLinks);
-          setMotifReasoningView(out?.motifReasoningView || emptyMotifReasoningView);
+          setMotifs(payloadMotifs(out));
+          setMotifLinks(payloadMotifLinks(out));
+          setMotifReasoningView(
+              normalizeReasoningViewPayload(out?.motifReasoningView || emptyMotifReasoningView, (out as any)?.reasoning_steps)
+          );
           if (Array.isArray(out?.contexts)) setContexts(out.contexts);
         },
 
@@ -306,9 +377,11 @@ export default function App() {
       if (Array.isArray(out?.concepts)) {
         setConcepts(out.concepts);
       }
-      if (Array.isArray(out?.motifs)) setMotifs(out.motifs);
-      if (Array.isArray(out?.motifLinks)) setMotifLinks(out.motifLinks);
-      setMotifReasoningView(out?.motifReasoningView || emptyMotifReasoningView);
+      setMotifs(payloadMotifs(out));
+      setMotifLinks(payloadMotifLinks(out));
+      setMotifReasoningView(
+          normalizeReasoningViewPayload(out?.motifReasoningView || emptyMotifReasoningView, (out as any)?.reasoning_steps)
+      );
       if (Array.isArray(out?.contexts)) setContexts(out.contexts);
       setConceptsDirty(false);
       if (out?.assistantText) {

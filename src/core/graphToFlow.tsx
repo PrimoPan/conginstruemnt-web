@@ -4,22 +4,24 @@ import type { AppLocale, CDG, CDGEdge, CDGNode, FlowNodeData, NodeLayer, Severit
 
 function typeLabel(type: string, locale: AppLocale): string {
     const en = locale === "en-US";
-    if (type === "goal") return en ? "Goal" : "目标";
     if (type === "constraint") return en ? "Constraint" : "约束";
     if (type === "preference") return en ? "Preference" : "偏好";
     if (type === "belief") return en ? "Belief" : "判断";
-    if (type === "fact") return en ? "Fact" : "事实";
-    if (type === "question") return en ? "Question" : "待确认";
+    if (type === "factual_assertion") return en ? "Factual assertion" : "事实陈述";
+    if (type === "goal") return en ? "Belief (legacy goal)" : "信念（旧goal）";
+    if (type === "fact") return en ? "Factual assertion (legacy fact)" : "事实陈述（旧fact）";
+    if (type === "question") return en ? "Belief (pending validation)" : "信念（待确认）";
     return type;
 }
 
 const TYPE_ORDER: Record<string, number> = {
-    goal: 0,
+    belief: 0,
     constraint: 1,
     preference: 2,
-    fact: 3,
-    belief: 4,
-    question: 5,
+    factual_assertion: 3,
+    goal: 4,
+    fact: 5,
+    question: 6,
 };
 
 function layerLabel(layer: NodeLayer, locale: AppLocale): string {
@@ -69,9 +71,8 @@ type SemanticLane =
     | "constraint_high"
     | "constraint"
     | "preference"
-    | "fact"
     | "belief"
-    | "question"
+    | "factual_assertion"
     | "other";
 
 function cleanStatement(input: string) {
@@ -129,7 +130,7 @@ function paletteForNode(node: CDGNode): NodePalette {
     if (node.layer === "risk" || node.severity === "critical" || node.severity === "high") {
         return { hue: 7, sat: 68 };
     }
-    if (node.layer === "intent" || node.type === "goal") {
+    if (node.layer === "intent" || (node.type === "belief" && String((node as any).key || "").startsWith("slot:goal"))) {
         return { hue: 214, sat: 52 };
     }
     if (node.layer === "preference" || node.type === "preference") {
@@ -137,9 +138,6 @@ function paletteForNode(node: CDGNode): NodePalette {
     }
     if (node.layer === "requirement" || node.type === "constraint") {
         return { hue: 204, sat: 46 };
-    }
-    if (node.type === "question") {
-        return { hue: 266, sat: 38 };
     }
     if (node.type === "belief") {
         return { hue: 188, sat: 40 };
@@ -189,7 +187,9 @@ function edgeSemanticLabel(type: string, locale: AppLocale): string {
 }
 
 function pickRootGoalId(graph: CDG): string | null {
-    const goals = (graph.nodes || []).filter((n) => n.type === "goal");
+    const goals = (graph.nodes || []).filter(
+        (n) => n.type === "belief" && (String((n as any).key || "").startsWith("slot:goal") || n.layer === "intent")
+    );
     if (!goals.length) return null;
     const locked = goals.find((n) => n.locked);
     if (locked) return locked.id;
@@ -209,21 +209,21 @@ function slotKeyOfNode(node: CDGNode): string | null {
     const s = cleanStatement(node.statement || "");
     if (!s) return null;
 
-    if (node.type === "goal") return "slot:goal";
+    if (node.type === "belief" && (node.layer === "intent" || /^(意图|intent)[:：]/i.test(s))) return "slot:goal";
     if (node.type === "constraint" && /^(?:预算(?:上限)?|budget(?: cap)?)[:：]\s*[0-9]{2,}\s*(?:元|cny)?$/i.test(s)) {
         return "slot:budget";
     }
-    if ((node.type === "fact" || node.type === "constraint") && /^(?:已花预算|spent budget)[:：]\s*[0-9]{1,8}\s*(?:元|cny)?$/i.test(s)) {
+    if ((node.type === "factual_assertion" || node.type === "constraint") && /^(?:已花预算|spent budget)[:：]\s*[0-9]{1,8}\s*(?:元|cny)?$/i.test(s)) {
         return "slot:budget_spent";
     }
     if (
-        (node.type === "fact" || node.type === "constraint") &&
+        (node.type === "factual_assertion" || node.type === "constraint") &&
         /^(?:剩余预算|可用预算|remaining budget|available budget)[:：]\s*[0-9]{1,8}\s*(?:元|cny)?$/i.test(s)
     ) {
         return "slot:budget_remaining";
     }
     if (
-        (node.type === "fact" || node.type === "constraint") &&
+        (node.type === "factual_assertion" || node.type === "constraint") &&
         /^(?:待确认预算|待确认支出|pending budget|pending spending)[:：]\s*[0-9]{1,8}\s*(?:元|cny)?$/i.test(s)
     ) {
         return "slot:budget_pending";
@@ -235,7 +235,7 @@ function slotKeyOfNode(node: CDGNode): string | null {
         return "slot:duration";
     }
     if (
-        (node.type === "fact" || node.type === "constraint") &&
+        (node.type === "factual_assertion" || node.type === "constraint") &&
         /^(?:城市时长|停留时长|city duration|stay duration)[:：]\s*.+\s+[0-9]{1,3}\s*(?:天|days?)$/i.test(s)
     ) {
         const m = s.match(/^(?:城市时长|停留时长|city duration|stay duration)[:：]\s*(.+?)\s+[0-9]{1,3}\s*(?:天|days?)$/i);
@@ -243,10 +243,10 @@ function slotKeyOfNode(node: CDGNode): string | null {
         if (city) return `slot:duration_city:${city}`;
         return "slot:duration_city:unknown";
     }
-    if (node.type === "fact" && /^(?:同行人数|travel party size|party size|people)[:：]\s*[0-9]{1,3}\s*(?:人|people)?$/i.test(s)) {
+    if (node.type === "factual_assertion" && /^(?:同行人数|travel party size|party size|people)[:：]\s*[0-9]{1,3}\s*(?:人|people)?$/i.test(s)) {
         return "slot:people";
     }
-    if (node.type === "fact" && /^(?:目的地|destination)[:：]\s*.+$/i.test(s)) {
+    if (node.type === "factual_assertion" && /^(?:目的地|destination)[:：]\s*.+$/i.test(s)) {
         const m = s.match(/^(?:目的地|destination)[:：]\s*(.+)$/i);
         const city = cleanStatement(m?.[1] || "");
         if (city) return `slot:destination:${city}`;
@@ -313,15 +313,14 @@ function laneForNode(node: CDGNode, slot: string | null): SemanticLane {
     if (slot) return laneForSlot(slot);
     if (node.layer === "risk") return "constraint_high";
     if (node.layer === "preference") return "preference";
-    if (node.layer === "intent") return "goal";
+    if (node.layer === "intent" || (node.type === "belief" && String((node as any).key || "").startsWith("slot:goal"))) return "goal";
     if (node.type === "constraint") {
         if (severityScore(node.severity) >= 3) return "constraint_high";
         return "constraint";
     }
     if (node.type === "preference") return "preference";
-    if (node.type === "fact") return "fact";
+    if (node.type === "factual_assertion") return "factual_assertion";
     if (node.type === "belief") return "belief";
-    if (node.type === "question") return "question";
     return "other";
 }
 
@@ -339,9 +338,8 @@ function laneOrder(level: number): SemanticLane[] {
         "lodging",
         "preference_slot",
         "preference",
-        "fact",
+        "factual_assertion",
         "belief",
-        "question",
         "other",
     ];
 }

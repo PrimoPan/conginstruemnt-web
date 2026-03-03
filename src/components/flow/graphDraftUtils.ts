@@ -83,7 +83,9 @@ export function hasPath(from: string, to: string, edges: CDGEdge[]): boolean {
 }
 
 export function pickRootGoalId(graph: CDG): string | null {
-    const goals = (graph.nodes || []).filter((n) => n.type === "goal");
+    const goals = (graph.nodes || []).filter(
+        (n) => n.type === "belief" && (String((n as any).key || "").startsWith("slot:goal") || n.layer === "intent")
+    );
     if (!goals.length) return null;
     const locked = goals.find((n) => n.locked);
     if (locked) return locked.id;

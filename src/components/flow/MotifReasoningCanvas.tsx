@@ -1,4 +1,4 @@
-import React, { memo, useMemo } from "react";
+import React, { memo, useEffect, useMemo, useRef, useState } from "react";
 import {
     Background,
     Controls,
@@ -82,13 +82,13 @@ function extractSourceRef(source: string): string {
 
 function normalizeMotifLinkType(raw: string): MotifLink["type"] {
     const t = cleanText(raw, 32).toLowerCase();
-    if (t === "enable" || t === "constraint" || t === "determine" || t === "conflicts_with") {
+    if (t === "precedes" || t === "supports" || t === "conflicts_with" || t === "refines") {
         return t as MotifLink["type"];
     }
-    // Backward compatibility with older saved values.
-    if (t === "conflicts") return "conflicts_with";
-    if (t === "depends_on" || t === "refines") return "determine";
-    return "enable";
+    if (t === "depends_on" || t === "determine") return "precedes";
+    if (t === "enable" || t === "support") return "supports";
+    if (t === "constraint" || t === "conflicts") return "conflicts_with";
+    return "supports";
 }
 
 function stepRoleLabel(role: MotifReasoningStepRole | undefined, locale?: AppLocale): string {
@@ -243,6 +243,11 @@ function buildFallbackView(params: {
     const steps = nodes.map((n) => {
         const slot = stepMap.get(n.motifId);
         return {
+            step_id: `S${slot?.order || 0}`,
+            summary: cleanText(n.title, 180),
+            motif_ids: [n.motifId],
+            concept_ids: (n.conceptIds || []).slice(0, 8),
+            depends_on: edges.filter((e) => e.to === n.id).map((e) => nodes.find((x) => x.id === e.from)?.motifId || "").filter(Boolean),
             id: `step_${n.motifId}`,
             order: slot?.order || 0,
             motifId: n.motifId,
@@ -297,8 +302,8 @@ function edgeColor(type: MotifLink["type"], confidence: number) {
     const c = clamp01(confidence, 0.72);
     const alpha = (0.35 + c * 0.45).toFixed(3);
     if (type === "conflicts_with") return `rgba(185, 28, 28, ${alpha})`;
-    if (type === "constraint") return `rgba(71, 85, 105, ${alpha})`;
-    if (type === "determine") return `rgba(202, 138, 4, ${alpha})`;
+    if (type === "precedes") return `rgba(202, 138, 4, ${alpha})`;
+    if (type === "refines") return `rgba(71, 85, 105, ${alpha})`;
     return `rgba(37, 99, 235, ${alpha})`;
 }
 
@@ -343,9 +348,9 @@ function causalOperatorLabel(op: ConceptMotif["causalOperator"] | undefined, loc
 }
 
 function edgeTypeLabel(type: MotifLink["type"], locale?: AppLocale) {
-    if (type === "enable") return tr(locale, "使能", "enable");
-    if (type === "constraint") return tr(locale, "约束", "constraint");
-    if (type === "determine") return tr(locale, "决定", "determine");
+    if (type === "supports") return tr(locale, "支持", "supports");
+    if (type === "precedes") return tr(locale, "前置", "precedes");
+    if (type === "refines") return tr(locale, "细化", "refines");
     if (type === "conflicts_with") return tr(locale, "冲突", "conflicts_with");
     return type;
 }
@@ -580,7 +585,11 @@ export function MotifReasoningCanvas(props: {
     onSelectMotif?: (motifId: string) => void;
     onSelectConcept?: (conceptId: string) => void;
 }) {
+    const AUTO_COLLAPSE_MS = 20000;
     const en = props.locale === "en-US";
+    const [stepsCollapsed, setStepsCollapsed] = useState(true);
+    const [stepsPinned, setStepsPinned] = useState(false);
+    const lastStepActivityAtRef = useRef<number>(Date.now());
     const conceptById = useMemo(
         () => new Map((props.concepts || []).map((c) => [c.id, c])),
         [props.concepts]
@@ -606,6 +615,27 @@ export function MotifReasoningCanvas(props: {
         () => layoutReasoningGraph(resolvedView, props.locale, conceptById, conceptNoById),
         [resolvedView, props.locale, conceptById, conceptNoById]
     );
+
+    const markStepActivity = () => {
+        lastStepActivityAtRef.current = Date.now();
+    };
+
+    useEffect(() => {
+        if (!steps.length) {
+            setStepsCollapsed(true);
+            setStepsPinned(false);
+        }
+    }, [steps.length]);
+
+    useEffect(() => {
+        if (stepsCollapsed || stepsPinned || !steps.length) return;
+        const timer = window.setInterval(() => {
+            if (Date.now() - lastStepActivityAtRef.current >= AUTO_COLLAPSE_MS) {
+                setStepsCollapsed(true);
+            }
+        }, 1000);
+        return () => window.clearInterval(timer);
+    }, [stepsCollapsed, stepsPinned, steps.length]);
     const nodeByMotifId = useMemo(
         () => new Map((resolvedView?.nodes || []).map((n) => [n.motifId, n])),
         [resolvedView]
@@ -654,34 +684,75 @@ export function MotifReasoningCanvas(props: {
                 <Controls />
             </ReactFlow>
             {steps.length ? (
-                <div className="MotifReasoningCanvas__steps">
-                    <div className="MotifReasoningCanvas__stepsTitle">
-                        {tr(props.locale, "结构化推理步骤（Explanation）", "Structured reasoning steps (explanation)")}
+                <div
+                    className={`MotifReasoningCanvas__steps ${stepsCollapsed ? "is-collapsed" : ""}`}
+                    onMouseMove={markStepActivity}
+                    onMouseEnter={markStepActivity}
+                    onFocusCapture={markStepActivity}
+                >
+                    <div className="MotifReasoningCanvas__stepsHead">
+                        <div className="MotifReasoningCanvas__stepsTitle">
+                            {tr(props.locale, "结构化推理步骤（Explanation）", "Structured reasoning steps (explanation)")}
+                        </div>
+                        <div className="MotifReasoningCanvas__stepsActions">
+                            <button
+                                type="button"
+                                className="MotifReasoningCanvas__stepsBtn"
+                                onClick={() => {
+                                    markStepActivity();
+                                    setStepsCollapsed((v) => !v);
+                                }}
+                            >
+                                {stepsCollapsed ? tr(props.locale, "展开", "Expand") : tr(props.locale, "收起", "Collapse")}
+                            </button>
+                            <button
+                                type="button"
+                                className={`MotifReasoningCanvas__stepsBtn ${stepsPinned ? "is-active" : ""}`}
+                                onClick={() => {
+                                    markStepActivity();
+                                    setStepsPinned((v) => !v);
+                                }}
+                            >
+                                {stepsPinned ? tr(props.locale, "取消固定", "Unpin") : tr(props.locale, "固定", "Pin")}
+                            </button>
+                        </div>
                     </div>
-                    <div className="MotifReasoningCanvas__stepsList">
-                        {steps
-                            .slice()
-                            .sort((a, b) => a.order - b.order)
-                            .slice(0, 24)
-                            .map((s) => (
-                                <div key={s.id} className={`MotifReasoningCanvas__step status-${s.status}`}>
-                                    <div className="MotifReasoningCanvas__stepHead">
-                                        <span className="MotifReasoningCanvas__stepNo">#{s.order}</span>
-                                        <span className="MotifReasoningCanvas__stepRole">
-                                            {stepRoleLabel(s.role, props.locale)}
-                                        </span>
-                                        <span className="MotifReasoningCanvas__stepMotif">{s.motifId}</span>
+                    {!stepsCollapsed ? (
+                        <div className="MotifReasoningCanvas__stepsList">
+                            {steps
+                                .slice()
+                                .sort((a, b) => a.order - b.order)
+                                .slice(0, 24)
+                                .map((s) => (
+                                    <div key={s.id} className={`MotifReasoningCanvas__step status-${s.status}`}>
+                                        <div className="MotifReasoningCanvas__stepHead">
+                                            <span className="MotifReasoningCanvas__stepNo">#{s.order}</span>
+                                            <span className="MotifReasoningCanvas__stepRole">
+                                                {stepRoleLabel(s.role, props.locale)}
+                                            </span>
+                                            <span className="MotifReasoningCanvas__stepMotif">{s.motifId}</span>
+                                        </div>
+                                        <div className="MotifReasoningCanvas__stepText">
+                                            {structuredStepExplanation({
+                                                step: s,
+                                                node: nodeByMotifId.get(s.motifId),
+                                                locale: props.locale,
+                                            })}
+                                        </div>
                                     </div>
-                                    <div className="MotifReasoningCanvas__stepText">
-                                        {structuredStepExplanation({
-                                            step: s,
-                                            node: nodeByMotifId.get(s.motifId),
-                                            locale: props.locale,
-                                        })}
-                                    </div>
-                                </div>
-                            ))}
-                    </div>
+                                ))}
+                        </div>
+                    ) : (
+                        <div className="MotifReasoningCanvas__stepsSummary">
+                            {tr(
+                                props.locale,
+                                `默认折叠。共 ${steps.length} 条可查看；空闲 ${Math.round(AUTO_COLLAPSE_MS / 1000)} 秒后自动收起。`,
+                                `Collapsed by default. ${steps.length} step(s); auto-collapses after ${Math.round(
+                                    AUTO_COLLAPSE_MS / 1000
+                                )}s of inactivity.`
+                            )}
+                        </div>
+                    )}
                 </div>
             ) : null}
         </div>
