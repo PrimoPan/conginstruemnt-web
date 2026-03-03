@@ -159,21 +159,28 @@ function buildFallbackView(params: {
     });
     const motifIdToNodeId = new Map(nodes.map((n) => [n.motifId, n.id]));
     const validNodeId = new Set(nodes.map((n) => n.id));
-    const edges: MotifReasoningEdge[] = uniq(
-        (params.motifLinks || []).map((x) => `${x.id}::${x.fromMotifId}::${x.toMotifId}::${x.type}`),
-        420
-    )
-        .map((packed) => {
-            const [id, fromMotifId, toMotifId, typeRaw] = packed.split("::");
-            return {
-                id,
-                from: motifIdToNodeId.get(fromMotifId) || "",
-                to: motifIdToNodeId.get(toMotifId) || "",
-                type: normalizeMotifLinkType(typeRaw),
-                confidence: 0.72,
-            } as MotifReasoningEdge;
-        })
-        .filter((e) => validNodeId.has(e.from) && validNodeId.has(e.to) && e.from !== e.to);
+    const edgeByKey = new Map<string, MotifReasoningEdge>();
+    for (const x of params.motifLinks || []) {
+        const from = motifIdToNodeId.get(cleanText((x as any)?.fromMotifId, 120)) || "";
+        const to = motifIdToNodeId.get(cleanText((x as any)?.toMotifId, 120)) || "";
+        if (!validNodeId.has(from) || !validNodeId.has(to) || from === to) continue;
+        const type = normalizeMotifLinkType(cleanText((x as any)?.type, 32));
+        const confidence = clamp01((x as any)?.confidence, 0.72);
+        const key = `${from}=>${to}::${type}`;
+        const prev = edgeByKey.get(key);
+        if (!prev || confidence > prev.confidence) {
+            edgeByKey.set(key, {
+                id: cleanText((x as any)?.id, 120) || `me_${cleanText((x as any)?.fromMotifId, 32)}_${cleanText((x as any)?.toMotifId, 32)}_${type}`,
+                from,
+                to,
+                type,
+                confidence,
+            });
+        }
+    }
+    const edges: MotifReasoningEdge[] = Array.from(edgeByKey.values()).sort(
+        (a, b) => b.confidence - a.confidence || a.id.localeCompare(b.id)
+    );
 
     const indeg = new Map<string, number>();
     const outdeg = new Map<string, number>();
