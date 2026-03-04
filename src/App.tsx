@@ -6,12 +6,16 @@ import { api } from "./api/client";
 import type {
   AppLocale,
   CDG,
+  CognitiveState,
   ConceptItem,
   ConceptMotif,
+  PortfolioDocumentState,
   MotifLink,
   MotifReasoningView,
   ContextItem,
   NodeEvidenceFocus,
+  TaskDetection,
+  TravelPlanState,
   TurnResponse,
   TurnStreamErrorData,
 } from "./core/type";
@@ -20,6 +24,7 @@ import { ChatPanel, Msg } from "./components/ChatPanel";
 import { FlowPanel, type ManualMotifDraft } from "./components/FlowPanel";
 import { normalizeGraphClient } from "./core/graphSafe";
 import { ConceptPanel } from "./components/ConceptPanel";
+import { PlanStatePanel } from "./components/PlanStatePanel";
 import {
   canonicalizeManualSemanticKey,
   findBestConceptForUpsert,
@@ -173,6 +178,30 @@ function payloadMotifLinks(payload: any): MotifLink[] {
   });
 }
 
+function payloadTaskDetection(payload: any): TaskDetection | null {
+  const x = payload?.taskDetection;
+  if (!x || typeof x !== "object") return null;
+  return x as TaskDetection;
+}
+
+function payloadCognitiveState(payload: any): CognitiveState | null {
+  const x = payload?.cognitiveState;
+  if (!x || typeof x !== "object") return null;
+  return x as CognitiveState;
+}
+
+function payloadPortfolioState(payload: any): PortfolioDocumentState | null {
+  const x = payload?.portfolioDocumentState;
+  if (!x || typeof x !== "object") return null;
+  return x as PortfolioDocumentState;
+}
+
+function payloadTravelPlanState(payload: any): TravelPlanState | null {
+  const x = payload?.travelPlanState;
+  if (!x || typeof x !== "object") return null;
+  return x as TravelPlanState;
+}
+
 export default function App() {
   const [username, setUsername] = useState("test");
   const [locale, setLocale] = useState<AppLocale>(() => {
@@ -191,6 +220,10 @@ export default function App() {
   const [motifLinks, setMotifLinks] = useState<MotifLink[]>([]);
   const [motifReasoningView, setMotifReasoningView] = useState<MotifReasoningView>(emptyMotifReasoningView);
   const [contexts, setContexts] = useState<ContextItem[]>([]);
+  const [travelPlanState, setTravelPlanState] = useState<TravelPlanState | null>(null);
+  const [taskDetection, setTaskDetection] = useState<TaskDetection | null>(null);
+  const [cognitiveState, setCognitiveState] = useState<CognitiveState | null>(null);
+  const [portfolioDocumentState, setPortfolioDocumentState] = useState<PortfolioDocumentState | null>(null);
   const [conceptsDirty, setConceptsDirty] = useState(false);
   const [activeConceptId, setActiveConceptId] = useState<string>("");
   const [activeMotifId, setActiveMotifId] = useState<string>("");
@@ -237,6 +270,10 @@ export default function App() {
             normalizeReasoningViewPayload(conv.motifReasoningView || emptyMotifReasoningView, (conv as any)?.reasoning_steps)
         );
         setContexts(Array.isArray(conv.contexts) ? conv.contexts : []);
+        setTravelPlanState(payloadTravelPlanState(conv));
+        setTaskDetection(payloadTaskDetection(conv));
+        setCognitiveState(payloadCognitiveState(conv));
+        setPortfolioDocumentState(payloadPortfolioState(conv));
         setConceptsDirty(false);
         setActiveConceptId("");
         setActiveMotifId("");
@@ -287,6 +324,10 @@ export default function App() {
     setMotifLinks([]);
     setMotifReasoningView(emptyMotifReasoningView);
     setContexts([]);
+    setTravelPlanState(null);
+    setTaskDetection(null);
+    setCognitiveState(null);
+    setPortfolioDocumentState(null);
     setConceptsDirty(false);
     setActiveConceptId("");
     setActiveMotifId("");
@@ -313,6 +354,10 @@ export default function App() {
           normalizeReasoningViewPayload(r.motifReasoningView || emptyMotifReasoningView, (r as any)?.reasoning_steps)
       );
       setContexts(Array.isArray(r.contexts) ? r.contexts : []);
+      setTravelPlanState(payloadTravelPlanState(r));
+      setTaskDetection(payloadTaskDetection(r));
+      setCognitiveState(payloadCognitiveState(r));
+      setPortfolioDocumentState(payloadPortfolioState(r));
       setConceptsDirty(false);
     } finally {
       setBusy(false);
@@ -383,6 +428,10 @@ export default function App() {
               normalizeReasoningViewPayload(out?.motifReasoningView || emptyMotifReasoningView, (out as any)?.reasoning_steps)
           );
           if (Array.isArray(out?.contexts)) setContexts(out.contexts);
+          setTravelPlanState(payloadTravelPlanState(out));
+          setTaskDetection(payloadTaskDetection(out));
+          setCognitiveState(payloadCognitiveState(out));
+          setPortfolioDocumentState(payloadPortfolioState(out));
         },
 
         onError: (err: TurnStreamErrorData) => {
@@ -438,6 +487,10 @@ export default function App() {
           normalizeReasoningViewPayload(out?.motifReasoningView || emptyMotifReasoningView, (out as any)?.reasoning_steps)
       );
       if (Array.isArray(out?.contexts)) setContexts(out.contexts);
+      setTravelPlanState(payloadTravelPlanState(out));
+      setTaskDetection(payloadTaskDetection(out));
+      setCognitiveState(payloadCognitiveState(out));
+      setPortfolioDocumentState(payloadPortfolioState(out));
       setConceptsDirty(false);
       if (out?.conflictGate?.blocked) {
         setMessages((prev) => [
@@ -513,6 +566,8 @@ export default function App() {
     const nextStatus = String((patch as any)?.status || "").trim().toLowerCase();
     if (nextStatus) {
       const prevStatus = String(prevMotif?.status || "").trim().toLowerCase();
+      const nextIsPaused = nextStatus === "cancelled" || nextStatus === "disabled";
+      const prevIsPaused = prevStatus === "cancelled" || prevStatus === "disabled";
       const nextMotif = nextMotifs.find((m) => m.id === motifId);
       const linkedConceptIds = new Set<string>((nextMotif?.conceptIds || prevMotif?.conceptIds || []).filter(Boolean));
 
@@ -522,16 +577,19 @@ export default function App() {
           return (prevConcepts || []).map((c) => {
             if (!linkedConceptIds.has(c.id)) return c;
 
-            // 用户暂停 motif：关联 concept 一并暂停。
-            if (nextStatus === "disabled") {
+            // 用户取消 motif：关联 concept 一并暂停。
+            if (nextIsPaused) {
               if (c.paused) return c;
               return { ...c, paused: true, updatedAt: now };
             }
 
-            // motif 从 disabled 恢复时：仅在没有其他 disabled motif 依赖该 concept 时自动恢复。
-            if (prevStatus === "disabled" && nextStatus !== "disabled") {
+            // motif 从取消态恢复时：仅在没有其他取消态 motif 依赖该 concept 时自动恢复。
+            if (prevIsPaused && !nextIsPaused) {
               const blockedByOtherDisabledMotif = nextMotifs.some(
-                  (m) => m.id !== motifId && m.status === "disabled" && (m.conceptIds || []).includes(c.id)
+                  (m) =>
+                      m.id !== motifId &&
+                      (m.status === "cancelled" || m.status === "disabled") &&
+                      (m.conceptIds || []).includes(c.id)
               );
               if (blockedByOtherDisabledMotif || !c.paused) return c;
               return { ...c, paused: false, updatedAt: now };
@@ -791,14 +849,27 @@ export default function App() {
 
         <div className={mainCls}>
           <div className="Left">
-            <ChatPanel
-                locale={locale}
-                messages={messages}
-                disabled={disabled}
-                busy={busy}
-                onSend={onSend}
-                evidenceFocus={mergedFocus}
-            />
+            <div className="LeftStack">
+              <div className="LeftStack__chat">
+                <ChatPanel
+                    locale={locale}
+                    messages={messages}
+                    disabled={disabled}
+                    busy={busy}
+                    onSend={onSend}
+                    evidenceFocus={mergedFocus}
+                />
+              </div>
+              <div className="LeftStack__plan">
+                <PlanStatePanel
+                    locale={locale}
+                    taskDetection={taskDetection}
+                    cognitiveState={cognitiveState}
+                    portfolioDocumentState={portfolioDocumentState}
+                    travelPlanState={travelPlanState}
+                />
+              </div>
+            </div>
           </div>
 
           {!conceptPanelCollapsed ? (

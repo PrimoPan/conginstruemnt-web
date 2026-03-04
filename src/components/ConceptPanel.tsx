@@ -50,7 +50,7 @@ function motifStatusLabel(locale: AppLocale, status: ConceptMotif["status"]) {
     if (status === "active") return tr(locale, "active", "active");
     if (status === "uncertain") return tr(locale, "uncertain", "uncertain");
     if (status === "deprecated") return tr(locale, "deprecated", "deprecated");
-    if (status === "disabled") return tr(locale, "disabled", "disabled");
+    if (status === "disabled") return tr(locale, "cancelled", "cancelled");
     return tr(locale, "cancelled", "cancelled");
 }
 
@@ -58,7 +58,7 @@ function motifStatusIcon(status: ConceptMotif["status"]) {
     if (status === "active") return "✅";
     if (status === "uncertain") return "⚠";
     if (status === "deprecated") return "❌";
-    if (status === "disabled") return "⏸";
+    if (status === "disabled") return "•";
     return "•";
 }
 
@@ -113,7 +113,7 @@ type MotifEditDraft = {
     causalOperator: MotifCausalOperator;
 };
 
-const USER_MOTIF_STATUS_OPTIONS: MotifLifecycleStatus[] = ["active", "disabled"];
+const USER_MOTIF_STATUS_OPTIONS: MotifLifecycleStatus[] = ["active", "cancelled"];
 const CAUSAL_OPERATOR_OPTIONS: MotifCausalOperator[] = [
     "direct_causation",
     "mediated_causation",
@@ -205,7 +205,7 @@ export function ConceptPanel(props: {
                 .slice()
                 .sort((a, b) => {
                     const rank = (s: ConceptMotif["status"]) =>
-                        s === "deprecated" ? 5 : s === "uncertain" ? 4 : s === "active" ? 3 : s === "disabled" ? 2 : 1;
+                        s === "deprecated" ? 5 : s === "uncertain" ? 4 : s === "active" ? 3 : s === "cancelled" ? 2 : 1;
                     return rank(b.status) - rank(a.status) || b.confidence - a.confidence || a.id.localeCompare(b.id);
                 }),
         [motifs]
@@ -265,7 +265,7 @@ export function ConceptPanel(props: {
         setEditingMotifDraft({
             title: m.title,
             description: m.description || "",
-            status: m.status === "disabled" ? "disabled" : "active",
+            status: m.status === "cancelled" || m.status === "disabled" ? "cancelled" : "active",
             sourceConceptIds: sourceIds,
             targetConceptId: targetId,
             causalOperator: m.causalOperator || defaultCausalOperator(m),
@@ -493,15 +493,15 @@ export function ConceptPanel(props: {
                                         <button
                                             type="button"
                                             className="ConceptCard__iconBtn"
-                                            title={m.status === "disabled"
+                                            title={m.status === "cancelled" || m.status === "disabled"
                                                 ? tr(locale, "启用 motif（恢复参与推理）", "Enable motif (resume reasoning)")
-                                                : tr(locale, "停用 motif（仅暂停，不删除）", "Disable motif (pause only, do not delete)")}
+                                                : tr(locale, "取消 motif（本轮不参与推理）", "Cancel motif (exclude from current reasoning)")}
                                             onClick={(e) => {
                                                 e.stopPropagation();
-                                                const disabling = m.status !== "disabled";
+                                                const disabling = m.status !== "cancelled" && m.status !== "disabled";
                                                 onPatchMotif(m.id, {
-                                                    status: disabling ? "disabled" : "active",
-                                                    statusReason: disabling ? "user_disabled" : "user_reenabled",
+                                                    status: disabling ? "cancelled" : "active",
+                                                    statusReason: disabling ? "user_cancelled" : "user_reenabled",
                                                     resolved: disabling ? true : false,
                                                     resolvedBy: disabling ? "user" : undefined,
                                                     resolvedAt: disabling ? new Date().toISOString() : undefined,
@@ -510,7 +510,7 @@ export function ConceptPanel(props: {
                                                 });
                                             }}
                                         >
-                                            {m.status === "disabled" ? "▶" : "⏸"}
+                                            {m.status === "cancelled" || m.status === "disabled" ? "▶" : "⏸"}
                                         </button>
                                         <button
                                             type="button"
@@ -784,11 +784,11 @@ export function ConceptPanel(props: {
                                                     if (draft.status !== m.status) {
                                                         patch.status = draft.status;
                                                         patch.statusReason = `user_status_${draft.status}`;
-                                                        if (draft.status === "disabled") {
+                                                        if (draft.status === "cancelled") {
                                                             patch.resolved = true;
                                                             patch.resolvedBy = "user";
                                                             patch.resolvedAt = now;
-                                                        } else if (m.status === "disabled") {
+                                                        } else if (m.status === "cancelled" || m.status === "disabled") {
                                                             patch.resolved = false;
                                                             patch.resolvedBy = undefined;
                                                             patch.resolvedAt = undefined;

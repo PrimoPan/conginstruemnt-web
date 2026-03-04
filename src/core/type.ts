@@ -102,6 +102,107 @@ export type ConversationSummary = {
     locale?: AppLocale;
 };
 
+export type TaskDetection = {
+    current_task_id: string;
+    is_task_switch: boolean;
+    reason: string;
+    signals: string[];
+    mode: "single_conversation" | "new_task_detected";
+};
+
+export type CognitiveStateConcept = {
+    concept_id: string;
+    kind: string;
+    title: string;
+    description: string;
+    validation_status: string;
+    source_msg_ids: string[];
+    evidence_terms: string[];
+};
+
+export type CognitiveStateMotifInstance = {
+    motif_id: string;
+    motif_type: string;
+    relation: string;
+    title: string;
+    status: string;
+    confidence: number;
+    concept_ids: string[];
+    anchor_concept_id: string;
+    rationale?: string;
+};
+
+export type CognitiveState = {
+    current_task_id: string;
+    tasks: Array<{
+        task_id: string;
+        task_type: "travel_planning";
+        task_context: {
+            conversation_id: string;
+            locale: AppLocale;
+            destination_scope: string[];
+            duration?: string;
+            trip_goal_summary: string;
+            updated_at: string;
+        };
+        concepts_from_user: CognitiveStateConcept[];
+        motif_instances_current_task: CognitiveStateMotifInstance[];
+        motif_transfer_candidates: Array<{
+            motif_type_id: string;
+            motif_type_title: string;
+            dependency: string;
+            reusable_description: string;
+            status: "uncertain";
+            reason: string;
+        }>;
+        clarification_questions: string[];
+        history: Array<{
+            at: string;
+            action: string;
+            summary: string;
+            source: string;
+        }>;
+    }>;
+    motif_library: Array<{
+        motif_type_id: string;
+        motif_type_title: string;
+        dependency: string;
+        reusable_description: string;
+        usage_count: number;
+        source_task_ids: string[];
+    }>;
+};
+
+export type PortfolioDocumentState = {
+    portfolio_id: string;
+    user_scope: string;
+    trips: Array<{
+        task_id: string;
+        trip_title: string;
+        destination_scope: string[];
+        travelers: string[];
+        duration: string;
+        plan_snapshot: {
+            summary: string;
+            constraints: string[];
+            day_plan_count: number;
+            budget_notes: string[];
+        };
+        export_ready_text: string;
+        status: "draft" | "active" | "archived";
+        last_updated: string;
+    }>;
+    export_order: string[];
+    combined_outline: string[];
+    combined_export_ready_text: string;
+    pdf_metadata: {
+        generated_at: string;
+        trip_count: number;
+        locale: AppLocale;
+    };
+    last_updated: string;
+};
+
 export type ConversationDetail = {
     conversationId: string;
     title: string;
@@ -121,6 +222,9 @@ export type ConversationDetail = {
     contexts?: ContextItem[];
     validation_status?: ConceptValidationStatus;
     travelPlanState?: TravelPlanState | null;
+    taskDetection?: TaskDetection;
+    cognitiveState?: CognitiveState;
+    portfolioDocumentState?: PortfolioDocumentState;
 };
 
 export type ConversationCreateResponse = ConversationDetail;
@@ -142,6 +246,9 @@ export type GraphSaveResponse = {
     contexts?: ContextItem[];
     validation_status?: ConceptValidationStatus;
     travelPlanState?: TravelPlanState | null;
+    taskDetection?: TaskDetection;
+    cognitiveState?: CognitiveState;
+    portfolioDocumentState?: PortfolioDocumentState;
     updatedAt: string;
     assistantText?: string;
     adviceError?: string;
@@ -165,6 +272,9 @@ export type ConceptSaveResponse = {
     contexts?: ContextItem[];
     validation_status?: ConceptValidationStatus;
     travelPlanState?: TravelPlanState | null;
+    taskDetection?: TaskDetection;
+    cognitiveState?: CognitiveState;
+    portfolioDocumentState?: PortfolioDocumentState;
     updatedAt: string;
 };
 
@@ -199,6 +309,9 @@ export type TurnResponse = {
     contexts?: ContextItem[];
     validation_status?: ConceptValidationStatus;
     travelPlanState?: TravelPlanState | null;
+    taskDetection?: TaskDetection;
+    cognitiveState?: CognitiveState;
+    portfolioDocumentState?: PortfolioDocumentState;
     conflictGate?: ConflictGatePayload | null;
 };
 
@@ -330,7 +443,8 @@ export type ConceptItem = {
 };
 
 export type ConceptMotifType = "pair" | "triad";
-export type MotifLifecycleStatus = "active" | "uncertain" | "deprecated" | "disabled" | "cancelled";
+export type MotifInstanceStatus = "active" | "uncertain" | "deprecated" | "cancelled";
+export type MotifLifecycleStatus = MotifInstanceStatus | "disabled";
 export type MotifChangeState = "new" | "updated" | "unchanged";
 export type MotifCausalOperator =
     | "direct_causation"
@@ -338,6 +452,7 @@ export type MotifCausalOperator =
     | "confounding"
     | "intervention"
     | "contradiction";
+export type MotifDependencyType = "enable" | "constraint" | "determine";
 
 export type ConceptMotif = {
     id: string;
@@ -380,6 +495,27 @@ export type ConceptMotif = {
     updatedAt: string;
     reuseClass?: "reusable" | "context_specific";
     reuseReason?: string;
+    motif_type_id?: string;
+    motif_type_title?: string;
+    motif_type_dependency?: MotifDependencyType[];
+    motif_type_role_schema?: {
+        drivers: string[];
+        target: string[];
+    };
+    motif_type_reusable_description?: string;
+    motif_instance_id?: string;
+    motif_instance_status?: MotifInstanceStatus;
+    context?: string;
+    bound_concepts?: {
+        drivers: string[];
+        target: string[];
+    };
+    evidence?: Array<{
+        quote: string;
+        source?: string;
+        conceptId?: string;
+    }>;
+    rationale?: string;
 };
 
 export type MotifLinkType = "precedes" | "supports" | "conflicts_with" | "refines";
@@ -491,12 +627,40 @@ export type TravelPlanAssistantPlan = {
     dayPlans: TravelPlanDay[];
 };
 
+export type TravelPlanSourceLabel =
+    | "assistant_proposed"
+    | "user_confirmed"
+    | "co_authored"
+    | "transferred_pattern_based";
+
+export type TravelPlanTaskHistorySegment = {
+    task_id: string;
+    trip_title: string;
+    destination_scope: string[];
+    travelers: string[];
+    duration?: string;
+    trip_goal_summary: string;
+    export_ready_text: string;
+    open_questions: string[];
+    rationale_refs: string[];
+    source_map: Record<string, { source_label: TravelPlanSourceLabel; notes?: string }>;
+    status: "archived" | "active";
+    closed_at: string;
+};
+
 export type TravelPlanState = {
     version: number;
+    plan_version?: number;
+    task_id?: string;
     updatedAt: string;
+    last_updated?: string;
     summary: string;
+    trip_goal_summary?: string;
     destinations: string[];
+    destination_scope?: string[];
     constraints: string[];
+    travel_dates_or_duration?: string;
+    travelers?: string[];
     totalDays?: number;
     budget?: {
         totalCny?: number;
@@ -504,7 +668,45 @@ export type TravelPlanState = {
         remainingCny?: number;
         pendingCny?: number;
     };
+    budgetLedger?: Array<{
+        type: string;
+        amountCny?: number;
+        evidence: string;
+    }>;
+    budgetSummary?: {
+        totalCny?: number;
+        spentCny?: number;
+        remainingCny?: number;
+        pendingCny?: number;
+    };
+    narrativeText?: string;
+    exportNarrative?: string;
+    candidate_options?: string[];
+    itinerary_outline?: string[];
+    day_by_day_plan?: TravelPlanDay[];
+    transport_plan?: string[];
+    stay_plan?: string[];
+    food_plan?: string[];
+    risk_notes?: string[];
+    budget_notes?: string[];
+    open_questions?: string[];
+    rationale_refs?: string[];
+    source_map?: Record<string, { source_label: TravelPlanSourceLabel; notes?: string }>;
+    export_ready_text?: string;
+    changelog?: Array<{
+        plan_version: number;
+        changed_at: string;
+        action: string;
+        summary: string;
+        source_label: string;
+    }>;
+    task_history?: TravelPlanTaskHistorySegment[];
     assistantPlan?: TravelPlanAssistantPlan;
+    evidenceAppendix?: Array<{
+        title: string;
+        content: string;
+        source: "dialogue" | "budget" | "graph";
+    }>;
     dayPlans: TravelPlanDay[];
     source: {
         turnCount: number;
