@@ -392,7 +392,12 @@ export const api = {
         motifs?: ConceptMotif[],
         motifLinks?: MotifLink[],
         contexts?: ContextItem[],
-        opts?: { requestAdvice?: boolean; advicePrompt?: string }
+        opts?: {
+            requestAdvice?: boolean;
+            advicePrompt?: string;
+            emitVirtualStructureMessage?: boolean;
+            saveReason?: "manual" | "auto_before_turn";
+        }
     ) =>
         http<GraphSaveResponse>(
             `/api/conversations/${cid}/graph`,
@@ -406,6 +411,8 @@ export const api = {
                     contexts: contexts || [],
                     requestAdvice: !!opts?.requestAdvice,
                     advicePrompt: opts?.advicePrompt || "",
+                    emitVirtualStructureMessage: !!opts?.emitVirtualStructureMessage,
+                    saveReason: opts?.saveReason || "",
                 }),
             },
             token

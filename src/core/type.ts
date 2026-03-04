@@ -203,6 +203,14 @@ export type PortfolioDocumentState = {
     last_updated: string;
 };
 
+export type MotifInvariantReport = {
+    requiredCausalEdges: number;
+    coveredCausalEdges: number;
+    uncoveredCausalEdges: number;
+    repairedMotifCount: number;
+    componentCount: number;
+};
+
 export type ConversationDetail = {
     conversationId: string;
     title: string;
@@ -218,6 +226,7 @@ export type ConversationDetail = {
         motif_links: MotifLink[];
     };
     motifReasoningView?: MotifReasoningView;
+    motifInvariantReport?: MotifInvariantReport;
     reasoning_steps?: ReasoningStepPayload[];
     contexts?: ContextItem[];
     validation_status?: ConceptValidationStatus;
@@ -242,6 +251,7 @@ export type GraphSaveResponse = {
         motif_links: MotifLink[];
     };
     motifReasoningView?: MotifReasoningView;
+    motifInvariantReport?: MotifInvariantReport;
     reasoning_steps?: ReasoningStepPayload[];
     contexts?: ContextItem[];
     validation_status?: ConceptValidationStatus;
@@ -268,6 +278,7 @@ export type ConceptSaveResponse = {
         motif_links: MotifLink[];
     };
     motifReasoningView?: MotifReasoningView;
+    motifInvariantReport?: MotifInvariantReport;
     reasoning_steps?: ReasoningStepPayload[];
     contexts?: ContextItem[];
     validation_status?: ConceptValidationStatus;
@@ -305,6 +316,7 @@ export type TurnResponse = {
         motif_links: MotifLink[];
     };
     motifReasoningView?: MotifReasoningView;
+    motifInvariantReport?: MotifInvariantReport;
     reasoning_steps?: ReasoningStepPayload[];
     contexts?: ContextItem[];
     validation_status?: ConceptValidationStatus;
@@ -516,6 +528,8 @@ export type ConceptMotif = {
         conceptId?: string;
     }>;
     rationale?: string;
+    coverage_origin?: "native" | "edge_repair";
+    subgraph_verified?: boolean;
 };
 
 export type MotifLinkType = "precedes" | "supports" | "conflicts_with" | "refines";

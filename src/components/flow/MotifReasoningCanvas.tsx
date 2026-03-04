@@ -1,4 +1,4 @@
-import React, { memo, useEffect, useMemo, useRef, useState } from "react";
+import React, { memo, useEffect, useMemo, useState } from "react";
 import {
     Background,
     Controls,
@@ -362,6 +362,260 @@ function edgeTypeLabel(type: MotifLink["type"], locale?: AppLocale) {
     return type;
 }
 
+type Point = { x: number; y: number };
+type ComponentPlacement = {
+    nodeIds: string[];
+    positions: Map<string, Point>;
+    width: number;
+    height: number;
+    signature: string;
+    score: number;
+};
+
+function sortedUniqNodeIds(rawNodes: MotifReasoningNode[]): string[] {
+    return Array.from(new Set((rawNodes || []).map((n) => n.id))).sort((a, b) => a.localeCompare(b));
+}
+
+function buildUndirectedComponents(
+    nodeIds: string[],
+    edges: Array<{ from: string; to: string }>
+): string[][] {
+    const nodeSet = new Set(nodeIds);
+    const adj = new Map<string, Set<string>>();
+    for (const id of nodeIds) adj.set(id, new Set<string>());
+    for (const edge of edges || []) {
+        if (!nodeSet.has(edge.from) || !nodeSet.has(edge.to) || edge.from === edge.to) continue;
+        adj.get(edge.from)?.add(edge.to);
+        adj.get(edge.to)?.add(edge.from);
+    }
+
+    const seen = new Set<string>();
+    const components: string[][] = [];
+    for (const id of nodeIds) {
+        if (seen.has(id)) continue;
+        const queue = [id];
+        const component: string[] = [];
+        seen.add(id);
+        while (queue.length) {
+            const cur = queue.shift() as string;
+            component.push(cur);
+            const neighbors = Array.from(adj.get(cur) || []);
+            for (const nxt of neighbors) {
+                if (seen.has(nxt)) continue;
+                seen.add(nxt);
+                queue.push(nxt);
+            }
+        }
+        components.push(component.sort((a, b) => a.localeCompare(b)));
+    }
+    return components;
+}
+
+function tarjanScc(
+    nodeIds: string[],
+    outgoing: Map<string, string[]>
+): string[][] {
+    const indexByNode = new Map<string, number>();
+    const lowByNode = new Map<string, number>();
+    const stack: string[] = [];
+    const onStack = new Set<string>();
+    const result: string[][] = [];
+    let index = 0;
+
+    const strongConnect = (nodeId: string) => {
+        indexByNode.set(nodeId, index);
+        lowByNode.set(nodeId, index);
+        index += 1;
+        stack.push(nodeId);
+        onStack.add(nodeId);
+
+        for (const nxt of outgoing.get(nodeId) || []) {
+            if (!indexByNode.has(nxt)) {
+                strongConnect(nxt);
+                lowByNode.set(nodeId, Math.min(lowByNode.get(nodeId) || 0, lowByNode.get(nxt) || 0));
+            } else if (onStack.has(nxt)) {
+                lowByNode.set(nodeId, Math.min(lowByNode.get(nodeId) || 0, indexByNode.get(nxt) || 0));
+            }
+        }
+
+        if ((lowByNode.get(nodeId) || 0) === (indexByNode.get(nodeId) || 0)) {
+            const members: string[] = [];
+            while (stack.length) {
+                const popped = stack.pop() as string;
+                onStack.delete(popped);
+                members.push(popped);
+                if (popped === nodeId) break;
+            }
+            result.push(members.sort((a, b) => a.localeCompare(b)));
+        }
+    };
+
+    for (const id of nodeIds) {
+        if (!indexByNode.has(id)) strongConnect(id);
+    }
+    return result;
+}
+
+function componentScore(
+    nodeIds: string[],
+    nodeById: Map<string, MotifReasoningNode>
+): number {
+    let score = 0;
+    for (const id of nodeIds) {
+        const node = nodeById.get(id);
+        if (!node) continue;
+        score = Math.max(score, statusRank(node.status) * 10 + clamp01(node.confidence, 0.7) * 5);
+    }
+    return score;
+}
+
+function layoutComponent(
+    nodeIds: string[],
+    rawEdges: MotifReasoningEdge[],
+    nodeById: Map<string, MotifReasoningNode>
+): ComponentPlacement {
+    const nodeSet = new Set(nodeIds);
+    const edges = (rawEdges || []).filter((e) => nodeSet.has(e.from) && nodeSet.has(e.to) && e.from !== e.to);
+    const outgoing = new Map<string, string[]>();
+    for (const id of nodeIds) outgoing.set(id, []);
+    for (const edge of edges) outgoing.get(edge.from)?.push(edge.to);
+
+    const sccList = tarjanScc(nodeIds, outgoing);
+    const sccIdByNode = new Map<string, string>();
+    const membersByScc = new Map<string, string[]>();
+    sccList.forEach((members, idx) => {
+        const sid = `SCC_${idx}`;
+        membersByScc.set(sid, members);
+        for (const id of members) sccIdByNode.set(id, sid);
+    });
+
+    const sccOutgoing = new Map<string, Set<string>>();
+    const indeg = new Map<string, number>();
+    for (const sid of Array.from(membersByScc.keys())) {
+        sccOutgoing.set(sid, new Set<string>());
+        indeg.set(sid, 0);
+    }
+    for (const edge of edges) {
+        const fromScc = sccIdByNode.get(edge.from);
+        const toScc = sccIdByNode.get(edge.to);
+        if (!fromScc || !toScc || fromScc === toScc) continue;
+        if (!sccOutgoing.get(fromScc)?.has(toScc)) {
+            sccOutgoing.get(fromScc)?.add(toScc);
+            indeg.set(toScc, (indeg.get(toScc) || 0) + 1);
+        }
+    }
+
+    const sccScore = (sid: string) => {
+        const members = membersByScc.get(sid) || [];
+        return componentScore(members, nodeById);
+    };
+    const queue = Array.from(membersByScc.keys())
+        .filter((sid) => (indeg.get(sid) || 0) === 0)
+        .sort((a, b) => sccScore(b) - sccScore(a) || a.localeCompare(b));
+    const topo: string[] = [];
+    const sccLevel = new Map<string, number>();
+    queue.forEach((sid) => sccLevel.set(sid, 0));
+
+    while (queue.length) {
+        const sid = queue.shift() as string;
+        topo.push(sid);
+        const lv = sccLevel.get(sid) || 0;
+        const nextSccIds = Array.from(sccOutgoing.get(sid) || []);
+        for (const nxt of nextSccIds) {
+            sccLevel.set(nxt, Math.max(sccLevel.get(nxt) || 0, lv + 1));
+            indeg.set(nxt, (indeg.get(nxt) || 0) - 1);
+            if ((indeg.get(nxt) || 0) <= 0) queue.push(nxt);
+        }
+        queue.sort((a, b) => (sccLevel.get(a) || 0) - (sccLevel.get(b) || 0) || sccScore(b) - sccScore(a) || a.localeCompare(b));
+    }
+    for (const sid of Array.from(membersByScc.keys())) {
+        if (!topo.includes(sid)) {
+            topo.push(sid);
+            if (!sccLevel.has(sid)) sccLevel.set(sid, 0);
+        }
+    }
+
+    const byLevel = new Map<number, string[]>();
+    for (const sid of topo) {
+        const lv = sccLevel.get(sid) || 0;
+        if (!byLevel.has(lv)) byLevel.set(lv, []);
+        byLevel.get(lv)!.push(sid);
+    }
+
+    const LEVEL_GAP_X = 420;
+    const ROW_GAP_Y = 198;
+    const INTRA_GAP_X = 48;
+    const GROUP_GAP_Y = 78;
+
+    const levelKeys = Array.from(byLevel.keys()).sort((a, b) => a - b);
+    const levelHeight = new Map<number, number>();
+    const levelLocalPositions = new Map<number, Array<{ nodeId: string; x: number; y: number }>>();
+
+    for (const lv of levelKeys) {
+        const sccIds = byLevel
+            .get(lv)!
+            .slice()
+            .sort((a, b) => sccScore(b) - sccScore(a) || a.localeCompare(b));
+
+        let cursorY = 0;
+        const localRows: Array<{ nodeId: string; x: number; y: number }> = [];
+        for (const sid of sccIds) {
+            const members = (membersByScc.get(sid) || [])
+                .slice()
+                .sort((a, b) => {
+                    const na = nodeById.get(a);
+                    const nb = nodeById.get(b);
+                    return (
+                        statusRank(nb?.status || "active") - statusRank(na?.status || "active") ||
+                        clamp01(nb?.confidence, 0.7) - clamp01(na?.confidence, 0.7) ||
+                        a.localeCompare(b)
+                    );
+                });
+            const rows = Math.max(1, Math.ceil(members.length / 2));
+            for (let i = 0; i < members.length; i += 1) {
+                const col = i % 2;
+                const row = Math.floor(i / 2);
+                localRows.push({
+                    nodeId: members[i],
+                    x: lv * LEVEL_GAP_X + col * INTRA_GAP_X,
+                    y: cursorY + row * ROW_GAP_Y,
+                });
+            }
+            cursorY += rows * ROW_GAP_Y + GROUP_GAP_Y;
+        }
+        const h = Math.max(ROW_GAP_Y, cursorY - GROUP_GAP_Y);
+        levelHeight.set(lv, h);
+        levelLocalPositions.set(lv, localRows);
+    }
+
+    const maxHeight = Math.max(...Array.from(levelHeight.values()), ROW_GAP_Y);
+    const finalPositions = new Map<string, Point>();
+    let maxX = 0;
+    for (const lv of levelKeys) {
+        const h = levelHeight.get(lv) || maxHeight;
+        const offsetY = (maxHeight - h) / 2;
+        for (const row of levelLocalPositions.get(lv) || []) {
+            finalPositions.set(row.nodeId, { x: row.x, y: row.y + offsetY });
+            maxX = Math.max(maxX, row.x);
+        }
+    }
+    for (const id of nodeIds) {
+        if (!finalPositions.has(id)) finalPositions.set(id, { x: 0, y: 0 });
+    }
+
+    const width = maxX + 340;
+    const height = maxHeight + 44;
+    const signature = nodeIds.slice().sort((a, b) => a.localeCompare(b)).join("|");
+    return {
+        nodeIds: nodeIds.slice(),
+        positions: finalPositions,
+        width,
+        height,
+        signature,
+        score: componentScore(nodeIds, nodeById),
+    };
+}
+
 function layoutReasoningGraph(
     view: MotifReasoningView,
     locale?: AppLocale,
@@ -372,80 +626,64 @@ function layoutReasoningGraph(
     edges: Edge[];
     steps: NonNullable<MotifReasoningView["steps"]>;
 } {
+    void conceptById;
     const rawNodes = (view?.nodes || []).slice();
     const rawEdges = (view?.edges || []).slice();
     const nodeById = new Map(rawNodes.map((n) => [n.id, n]));
-    const outgoing = new Map<string, string[]>();
-    const indeg = new Map<string, number>();
-    for (const n of rawNodes) {
-        outgoing.set(n.id, []);
-        indeg.set(n.id, 0);
-    }
-    for (const e of rawEdges) {
-        if (!nodeById.has(e.from) || !nodeById.has(e.to) || e.from === e.to) continue;
-        outgoing.get(e.from)!.push(e.to);
-        indeg.set(e.to, (indeg.get(e.to) || 0) + 1);
-    }
+    const validEdges = rawEdges.filter((e) => nodeById.has(e.from) && nodeById.has(e.to) && e.from !== e.to);
+    const nodeIds = sortedUniqNodeIds(rawNodes);
+    const components = buildUndirectedComponents(
+        nodeIds,
+        validEdges.map((e) => ({ from: e.from, to: e.to }))
+    );
+    const placements = components
+        .map((ids) => layoutComponent(ids, validEdges, nodeById))
+        .sort(
+            (a, b) =>
+                b.score - a.score ||
+                b.nodeIds.length - a.nodeIds.length ||
+                a.signature.localeCompare(b.signature)
+        );
 
-    const level = new Map<string, number>();
-    const visited = new Set<string>();
-    const queue = rawNodes
-        .filter((n) => (indeg.get(n.id) || 0) === 0)
-        .sort((a, b) => b.confidence - a.confidence || a.id.localeCompare(b.id))
-        .map((n) => n.id);
+    const COMP_GAP_X = 240;
+    const COMP_GAP_Y = 180;
+    const START_X = 80;
+    const START_Y = 70;
+    const columns = Math.max(1, Math.ceil(Math.sqrt(Math.max(1, placements.length))));
 
-    for (const id of queue) level.set(id, 0);
-    while (queue.length) {
-        const cur = queue.shift() as string;
-        if (visited.has(cur)) continue;
-        visited.add(cur);
-        const baseLevel = level.get(cur) || 0;
-        for (const nxt of outgoing.get(cur) || []) {
-            const nextLevel = Math.max(level.get(nxt) || 0, baseLevel + 1);
-            level.set(nxt, nextLevel);
-            indeg.set(nxt, (indeg.get(nxt) || 0) - 1);
-            if ((indeg.get(nxt) || 0) <= 0) queue.push(nxt);
+    const finalPos = new Map<string, Point>();
+    let cursorX = START_X;
+    let cursorY = START_Y;
+    let rowHeight = 0;
+    let col = 0;
+    for (const placement of placements) {
+        if (col >= columns) {
+            cursorX = START_X;
+            cursorY += rowHeight + COMP_GAP_Y;
+            rowHeight = 0;
+            col = 0;
         }
-        queue.sort((a, b) => {
-            const na = nodeById.get(a)!;
-            const nb = nodeById.get(b)!;
-            return (level.get(a) || 0) - (level.get(b) || 0) || nb.confidence - na.confidence || a.localeCompare(b);
-        });
-    }
-
-    let maxLevel = 0;
-    const existingLevels = Array.from(level.values());
-    for (let i = 0; i < existingLevels.length; i += 1) {
-        maxLevel = Math.max(maxLevel, existingLevels[i]);
-    }
-    for (const n of rawNodes) {
-        if (!level.has(n.id)) {
-            maxLevel += 1;
-            level.set(n.id, maxLevel);
+        for (const [nodeId, p] of Array.from(placement.positions.entries())) {
+            finalPos.set(nodeId, { x: cursorX + p.x, y: cursorY + p.y });
         }
-    }
-
-    const byLevel = new Map<number, MotifReasoningNode[]>();
-    for (const n of rawNodes) {
-        const l = level.get(n.id) || 0;
-        if (!byLevel.has(l)) byLevel.set(l, []);
-        byLevel.get(l)!.push(n);
+        cursorX += placement.width + COMP_GAP_X;
+        rowHeight = Math.max(rowHeight, placement.height);
+        col += 1;
     }
 
     const stepByMotifId = new Map(
         ((view?.steps || []) as NonNullable<MotifReasoningView["steps"]>).map((s) => [s.motifId, s])
     );
-    const nodes: Node<MotifFlowData>[] = [];
-    const levelKeys = Array.from(byLevel.keys()).sort((a, b) => a - b);
-    for (const l of levelKeys) {
-        const group = byLevel
-            .get(l)!
-            .slice()
-            .sort((a, b) => statusRank(b.status) - statusRank(a.status) || b.confidence - a.confidence || a.id.localeCompare(b.id));
-        for (let i = 0; i < group.length; i += 1) {
-            const n = group[i];
+    const nodes: Node<MotifFlowData>[] = rawNodes
+        .slice()
+        .sort((a, b) => {
+            const pa = finalPos.get(a.id) || { x: 0, y: 0 };
+            const pb = finalPos.get(b.id) || { x: 0, y: 0 };
+            return pa.x - pb.x || pa.y - pb.y || a.id.localeCompare(b.id);
+        })
+        .map((n) => {
             const confidence = clamp01(n.confidence, 0.7);
-            const conceptIds = (n.conceptIds || []).slice(0, 3);
+            const conceptIds = (n.conceptIds || []).slice(0, 4);
             const conceptLabels = conceptIds.map((id) => {
                 const no = conceptNoById?.get(id);
                 return no ? `C${no}` : cleanText(id, 16);
@@ -464,13 +702,10 @@ function layoutReasoningGraph(
                               return no ? `C${no}` : cleanText(tgt, 16);
                           })()}`
                     : n.pattern;
-            nodes.push({
+            return {
                 id: n.id,
                 type: "motifNode",
-                position: {
-                    x: 90 + l * 380,
-                    y: 80 + i * 220,
-                },
+                position: finalPos.get(n.id) || { x: 90, y: 80 },
                 data: {
                     motifId: n.motifId,
                     locale,
@@ -484,31 +719,36 @@ function layoutReasoningGraph(
                     motifType: n.motifType,
                     pattern: rebuiltPattern,
                     conceptLabels,
-                    sourceRefs: (n.sourceRefs || []).slice(0, 6),
+                    sourceRefs: (n.sourceRefs || []).slice(0, 8),
                     stepOrder: stepByMotifId.get(n.motifId)?.order,
                     stepRole: stepByMotifId.get(n.motifId)?.role,
                 },
-            });
-        }
-    }
+            };
+        });
 
-    const edges: Edge[] = rawEdges
-        .filter((e) => nodeById.has(e.from) && nodeById.has(e.to) && e.from !== e.to)
+    const edges: Edge[] = validEdges
+        .slice()
+        .sort((a, b) => a.from.localeCompare(b.from) || a.to.localeCompare(b.to) || a.id.localeCompare(b.id))
         .map((e) => {
             const conf = clamp01(e.confidence, 0.72);
+            const color = edgeColor(e.type, conf);
             return {
                 id: e.id,
                 source: e.from,
                 target: e.to,
                 type: "smoothstep",
+                pathOptions: {
+                    borderRadius: 18,
+                    offset: 18,
+                },
                 label: edgeTypeLabel(e.type, locale),
                 style: {
-                    stroke: edgeColor(e.type, conf),
+                    stroke: color,
                     strokeWidth: 1.1 + conf * 1.8,
                 },
                 markerEnd: {
                     type: MarkerType.ArrowClosed,
-                    color: edgeColor(e.type, conf),
+                    color,
                     width: 16,
                     height: 16,
                 },
@@ -517,6 +757,9 @@ function layoutReasoningGraph(
                     fontSize: 11,
                     fontWeight: 500,
                 },
+                labelBgPadding: [5, 3],
+                labelBgBorderRadius: 6,
+                labelBgStyle: { fill: "rgba(255, 255, 255, 0.9)", fillOpacity: 0.9 },
             };
         });
 
@@ -592,11 +835,8 @@ export function MotifReasoningCanvas(props: {
     onSelectMotif?: (motifId: string) => void;
     onSelectConcept?: (conceptId: string) => void;
 }) {
-    const AUTO_COLLAPSE_MS = 20000;
     const en = props.locale === "en-US";
-    const [stepsCollapsed, setStepsCollapsed] = useState(true);
-    const [stepsPinned, setStepsPinned] = useState(false);
-    const lastStepActivityAtRef = useRef<number>(Date.now());
+    const [stepsCollapsed, setStepsCollapsed] = useState(false);
     const conceptById = useMemo(
         () => new Map((props.concepts || []).map((c) => [c.id, c])),
         [props.concepts]
@@ -623,26 +863,9 @@ export function MotifReasoningCanvas(props: {
         [resolvedView, props.locale, conceptById, conceptNoById]
     );
 
-    const markStepActivity = () => {
-        lastStepActivityAtRef.current = Date.now();
-    };
-
     useEffect(() => {
-        if (!steps.length) {
-            setStepsCollapsed(true);
-            setStepsPinned(false);
-        }
+        if (!steps.length) setStepsCollapsed(false);
     }, [steps.length]);
-
-    useEffect(() => {
-        if (stepsCollapsed || stepsPinned || !steps.length) return;
-        const timer = window.setInterval(() => {
-            if (Date.now() - lastStepActivityAtRef.current >= AUTO_COLLAPSE_MS) {
-                setStepsCollapsed(true);
-            }
-        }, 1000);
-        return () => window.clearInterval(timer);
-    }, [stepsCollapsed, stepsPinned, steps.length]);
     const nodeByMotifId = useMemo(
         () => new Map((resolvedView?.nodes || []).map((n) => [n.motifId, n])),
         [resolvedView]
@@ -691,12 +914,7 @@ export function MotifReasoningCanvas(props: {
                 <Controls />
             </ReactFlow>
             {steps.length ? (
-                <div
-                    className={`MotifReasoningCanvas__steps ${stepsCollapsed ? "is-collapsed" : ""}`}
-                    onMouseMove={markStepActivity}
-                    onMouseEnter={markStepActivity}
-                    onFocusCapture={markStepActivity}
-                >
+                <div className={`MotifReasoningCanvas__steps ${stepsCollapsed ? "is-collapsed" : ""}`}>
                     <div className="MotifReasoningCanvas__stepsHead">
                         <div className="MotifReasoningCanvas__stepsTitle">
                             {tr(props.locale, "结构化推理步骤（Explanation）", "Structured reasoning steps (explanation)")}
@@ -705,22 +923,9 @@ export function MotifReasoningCanvas(props: {
                             <button
                                 type="button"
                                 className="MotifReasoningCanvas__stepsBtn"
-                                onClick={() => {
-                                    markStepActivity();
-                                    setStepsCollapsed((v) => !v);
-                                }}
+                                onClick={() => setStepsCollapsed((v) => !v)}
                             >
                                 {stepsCollapsed ? tr(props.locale, "展开", "Expand") : tr(props.locale, "收起", "Collapse")}
-                            </button>
-                            <button
-                                type="button"
-                                className={`MotifReasoningCanvas__stepsBtn ${stepsPinned ? "is-active" : ""}`}
-                                onClick={() => {
-                                    markStepActivity();
-                                    setStepsPinned((v) => !v);
-                                }}
-                            >
-                                {stepsPinned ? tr(props.locale, "取消固定", "Unpin") : tr(props.locale, "固定", "Pin")}
                             </button>
                         </div>
                     </div>
@@ -753,10 +958,8 @@ export function MotifReasoningCanvas(props: {
                         <div className="MotifReasoningCanvas__stepsSummary">
                             {tr(
                                 props.locale,
-                                `默认折叠。共 ${steps.length} 条可查看；空闲 ${Math.round(AUTO_COLLAPSE_MS / 1000)} 秒后自动收起。`,
-                                `Collapsed by default. ${steps.length} step(s); auto-collapses after ${Math.round(
-                                    AUTO_COLLAPSE_MS / 1000
-                                )}s of inactivity.`
+                                `已收起。共 ${steps.length} 条可查看，点击“展开”查看完整步骤。`,
+                                `Collapsed. ${steps.length} step(s); click Expand to view all reasoning steps.`
                             )}
                         </div>
                     )}

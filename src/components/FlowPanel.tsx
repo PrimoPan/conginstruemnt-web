@@ -190,11 +190,17 @@ export function FlowPanel(props: {
     onCreateMotifDraft?: (draft: ManualMotifDraft) => void;
     onSaveGraph?: (
         graph: CDG,
-        opts?: { requestAdvice?: boolean; advicePrompt?: string }
+        opts?: {
+            requestAdvice?: boolean;
+            advicePrompt?: string;
+            emitVirtualStructureMessage?: boolean;
+            saveReason?: "manual" | "auto_before_turn";
+        }
     ) => Promise<void> | void;
     savingGraph?: boolean;
     conceptPanelCollapsed: boolean;
     onToggleConceptPanel: () => void;
+    onUnsavedStateChange?: (state: { hasUnsaved: boolean }) => void;
 }) {
     const {
         conversationId,
@@ -219,6 +225,7 @@ export function FlowPanel(props: {
         savingGraph,
         conceptPanelCollapsed,
         onToggleConceptPanel,
+        onUnsavedStateChange,
     } = props;
     const en = locale === "en-US";
     const tr = (zh: string, enText: string) => (en ? enText : zh);
@@ -632,6 +639,10 @@ export function FlowPanel(props: {
 
     const hasUnsavedChanges = dirty || !!extraDirty;
 
+    useEffect(() => {
+        onUnsavedStateChange?.({ hasUnsaved: hasUnsavedChanges });
+    }, [hasUnsavedChanges, onUnsavedStateChange]);
+
     const saveGraph = useCallback(async () => {
         if (!onSaveGraph || savingGraph || !hasUnsavedChanges) return;
         setSaveError("");
@@ -643,6 +654,8 @@ export function FlowPanel(props: {
                     advicePrompt: en
                         ? "The user manually edited the intent graph. Treat this graph as the latest source of truth and provide executable next-step advice from existing dialogue. Give an action plan first, then ask 1-2 focused follow-up questions."
                         : "用户已手动编辑意图流程图，请把该图视为最新真值，结合已有对话给出下一步可执行建议（先行动方案，再1-2个关键问题）。",
+                    emitVirtualStructureMessage: true,
+                    saveReason: "manual",
                 })
             );
             setDirty(false);

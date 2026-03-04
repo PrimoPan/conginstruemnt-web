@@ -24,8 +24,10 @@ export function PlanStatePanel(props: {
   cognitiveState: CognitiveState | null;
   portfolioDocumentState: PortfolioDocumentState | null;
   travelPlanState: TravelPlanState | null;
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
 }) {
-  const { locale, taskDetection, cognitiveState, portfolioDocumentState, travelPlanState } = props;
+  const { locale, taskDetection, cognitiveState, portfolioDocumentState, travelPlanState, collapsed, onToggleCollapsed } = props;
 
   const taskMode = taskDetection?.mode || "single_conversation";
   const taskReason = clean(taskDetection?.reason, 180);
@@ -41,7 +43,18 @@ export function PlanStatePanel(props: {
 
   return (
     <div className="Panel PlanStatePanel">
-      <div className="PanelHeader">{tr(locale, "计划状态", "Plan State")}</div>
+      <div className="PanelHeader PlanStatePanel__head">
+        <span>{tr(locale, "计划状态", "Plan State")}</span>
+        <button
+          type="button"
+          className="PlanStatePanel__toggle"
+          onClick={onToggleCollapsed}
+          title={collapsed ? tr(locale, "展开计划状态", "Expand plan state") : tr(locale, "收起计划状态", "Collapse plan state")}
+        >
+          {collapsed ? tr(locale, "展开", "Expand") : tr(locale, "收起", "Collapse")}
+        </button>
+      </div>
+      {!collapsed ? (
       <div className="PlanStatePanel__body">
         <div className="PlanStatePanel__row">
           <span className="PlanStatePanel__key">{tr(locale, "任务模式", "Task mode")}</span>
@@ -73,6 +86,11 @@ export function PlanStatePanel(props: {
         </div>
         {taskReason ? <div className="PlanStatePanel__reason">{taskReason}</div> : null}
       </div>
+      ) : (
+        <div className="PlanStatePanel__summary">
+          {tr(locale, "默认收起，点击“展开”查看任务状态详情。", "Collapsed by default. Click Expand to view details.")}
+        </div>
+      )}
     </div>
   );
 }

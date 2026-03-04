@@ -454,7 +454,14 @@ function deriveSemanticMeta(graph: CDG) {
     return { rootId, levelById, laneById };
 }
 
-function computePositions(graph: CDG) {
+function computePositionsSingleComponent(
+    graph: CDG,
+    opts?: {
+        originX?: number;
+        originY?: number;
+        keepManualPositions?: boolean;
+    }
+) {
     const positions = new Map<string, { x: number; y: number }>();
     const { rootId, levelById, laneById } = deriveSemanticMeta(graph);
     const edges = graph.edges || [];
@@ -466,17 +473,19 @@ function computePositions(graph: CDG) {
         adjacency.get(e.to)!.push(e.from);
     }
 
-    const rootX = 90;
-    const rootY = 340;
+    const rootX = Number(opts?.originX ?? 90);
+    const rootY = Number(opts?.originY ?? 340);
     const levelGap = 360;
     const laneBandGap = 210;
     const rowGap = 122;
     const columnGap = 205;
     const maxRowsPerColumn = 5;
 
-    for (const n of graph.nodes || []) {
-        const pinned = readManualPosition(n);
-        if (pinned) positions.set(n.id, pinned);
+    if (opts?.keepManualPositions !== false) {
+        for (const n of graph.nodes || []) {
+            const pinned = readManualPosition(n);
+            if (pinned) positions.set(n.id, pinned);
+        }
     }
 
     if (rootId && !positions.has(rootId)) positions.set(rootId, { x: rootX, y: rootY });
@@ -547,6 +556,140 @@ function computePositions(graph: CDG) {
     }
 
     return positions;
+}
+
+function hasManualPositions(graph: CDG): boolean {
+    return (graph.nodes || []).some((n) => !!readManualPosition(n));
+}
+
+function connectedComponents(graph: CDG): string[][] {
+    const nodeIds = (graph.nodes || []).map((n) => n.id).sort((a, b) => a.localeCompare(b));
+    const nodeSet = new Set(nodeIds);
+    const adj = new Map<string, Set<string>>();
+    for (const id of nodeIds) adj.set(id, new Set<string>());
+    for (const e of graph.edges || []) {
+        if (!nodeSet.has(e.from) || !nodeSet.has(e.to) || e.from === e.to) continue;
+        adj.get(e.from)!.add(e.to);
+        adj.get(e.to)!.add(e.from);
+    }
+    const seen = new Set<string>();
+    const comps: string[][] = [];
+    for (const id of nodeIds) {
+        if (seen.has(id)) continue;
+        const queue = [id];
+        const comp: string[] = [];
+        seen.add(id);
+        while (queue.length) {
+            const cur = queue.shift() as string;
+            comp.push(cur);
+            const neighbors = Array.from(adj.get(cur) || []);
+            for (const nxt of neighbors) {
+                if (seen.has(nxt)) continue;
+                seen.add(nxt);
+                queue.push(nxt);
+            }
+        }
+        comps.push(comp.sort((a, b) => a.localeCompare(b)));
+    }
+    return comps;
+}
+
+function computePositions(graph: CDG) {
+    if (hasManualPositions(graph)) {
+        return computePositionsSingleComponent(graph, {
+            originX: 90,
+            originY: 340,
+            keepManualPositions: true,
+        });
+    }
+
+    const nodeById = new Map((graph.nodes || []).map((n) => [n.id, n]));
+    const components = connectedComponents(graph).sort((a, b) => {
+        const score = (ids: string[]) =>
+            ids.reduce(
+                (acc, id) =>
+                    Math.max(
+                        acc,
+                        clamp01(nodeById.get(id)?.importance, 0.65) * 10 +
+                            clamp01(nodeById.get(id)?.confidence, 0.65) * 5 +
+                            severityScore(nodeById.get(id)?.severity)
+                    ),
+                0
+            );
+        const scoreA = score(a);
+        const scoreB = score(b);
+        return scoreB - scoreA || b.length - a.length || a.join("|").localeCompare(b.join("|"));
+    });
+
+    const placements = components.map((ids) => {
+        const set = new Set(ids);
+        const subGraph: CDG = {
+            ...graph,
+            nodes: (graph.nodes || []).filter((n) => set.has(n.id)),
+            edges: (graph.edges || []).filter((e) => set.has(e.from) && set.has(e.to)),
+        };
+        const local = computePositionsSingleComponent(subGraph, {
+            originX: 90,
+            originY: 220,
+            keepManualPositions: false,
+        });
+        let minX = Number.POSITIVE_INFINITY;
+        let minY = Number.POSITIVE_INFINITY;
+        let maxX = Number.NEGATIVE_INFINITY;
+        let maxY = Number.NEGATIVE_INFINITY;
+        for (const id of ids) {
+            const p = local.get(id) || { x: 90, y: 220 };
+            minX = Math.min(minX, p.x);
+            minY = Math.min(minY, p.y);
+            maxX = Math.max(maxX, p.x);
+            maxY = Math.max(maxY, p.y);
+        }
+        const normalized = new Map<string, { x: number; y: number }>();
+        for (const id of ids) {
+            const p = local.get(id) || { x: 90, y: 220 };
+            normalized.set(id, {
+                x: p.x - minX,
+                y: p.y - minY,
+            });
+        }
+        return {
+            ids,
+            positions: normalized,
+            width: Math.max(220, maxX - minX + 280),
+            height: Math.max(180, maxY - minY + 160),
+            signature: ids.join("|"),
+        };
+    });
+
+    const packed = new Map<string, { x: number; y: number }>();
+    const columns = Math.max(1, Math.ceil(Math.sqrt(Math.max(1, placements.length))));
+    const startX = 90;
+    const startY = 90;
+    const gapX = 240;
+    const gapY = 200;
+    let cursorX = startX;
+    let cursorY = startY;
+    let rowHeight = 0;
+    let col = 0;
+
+    for (const item of placements) {
+        if (col >= columns) {
+            cursorX = startX;
+            cursorY += rowHeight + gapY;
+            rowHeight = 0;
+            col = 0;
+        }
+        for (const [id, p] of Array.from(item.positions.entries())) {
+            packed.set(id, {
+                x: cursorX + p.x,
+                y: cursorY + p.y,
+            });
+        }
+        cursorX += item.width + gapX;
+        rowHeight = Math.max(rowHeight, item.height);
+        col += 1;
+    }
+    return packed;
 }
 
 export function cdgToFlow(

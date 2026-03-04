@@ -35,6 +35,7 @@ const emptyGraph: CDG = { id: "", version: 0, nodes: [], edges: [] };
 const emptyMotifReasoningView: MotifReasoningView = { nodes: [], edges: [] };
 const LOCALE_STORAGE_KEY = "ci_locale";
 const CONCEPT_PANEL_COLLAPSED_STORAGE_KEY = "ci_concept_panel_collapsed";
+const PLAN_STATE_PANEL_COLLAPSED_STORAGE_KEY = "ci_plan_state_panel_collapsed";
 
 function clamp01(v: any, fallback = 0.7) {
   const n = Number(v);
@@ -237,6 +238,12 @@ export default function App() {
   const [conceptPanelCollapsed, setConceptPanelCollapsed] = useState<boolean>(() => {
     return localStorage.getItem(CONCEPT_PANEL_COLLAPSED_STORAGE_KEY) === "1";
   });
+  const [planStateCollapsed, setPlanStateCollapsed] = useState<boolean>(() => {
+    const raw = localStorage.getItem(PLAN_STATE_PANEL_COLLAPSED_STORAGE_KEY);
+    if (raw == null) return true;
+    return raw === "1";
+  });
+  const [flowHasUnsaved, setFlowHasUnsaved] = useState(false);
   const loggedIn = !!token;
   const en = locale === "en-US";
   const tr = (zh: string, enText: string) => (en ? enText : zh);
@@ -275,6 +282,7 @@ export default function App() {
         setCognitiveState(payloadCognitiveState(conv));
         setPortfolioDocumentState(payloadPortfolioState(conv));
         setConceptsDirty(false);
+        setFlowHasUnsaved(false);
         setActiveConceptId("");
         setActiveMotifId("");
         setFocusNodeId("");
@@ -329,6 +337,7 @@ export default function App() {
     setCognitiveState(null);
     setPortfolioDocumentState(null);
     setConceptsDirty(false);
+    setFlowHasUnsaved(false);
     setActiveConceptId("");
     setActiveMotifId("");
     setFocusNodeId("");
@@ -359,6 +368,7 @@ export default function App() {
       setCognitiveState(payloadCognitiveState(r));
       setPortfolioDocumentState(payloadPortfolioState(r));
       setConceptsDirty(false);
+      setFlowHasUnsaved(false);
     } finally {
       setBusy(false);
     }
@@ -373,6 +383,31 @@ export default function App() {
 
     // 中断上一次
     abortRef.current?.abort();
+
+    const hasUnsavedChanges = flowHasUnsaved || conceptsDirty;
+    if (hasUnsavedChanges) {
+      try {
+        await onSaveGraph(
+            (draftGraphPreview?.nodes?.length ? draftGraphPreview : graph),
+            {
+              requestAdvice: false,
+              emitVirtualStructureMessage: true,
+              saveReason: "auto_before_turn",
+            }
+        );
+      } catch (e: any) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: makeId("autosave_err"),
+            role: "assistant",
+            text: `${tr("自动保存失败，已阻止本次发送", "Auto-save failed; sending is blocked")}: ${e?.message || String(e)}`,
+          },
+        ]);
+        return;
+      }
+    }
+
     const ac = new AbortController();
     abortRef.current = ac;
 
@@ -421,6 +456,7 @@ export default function App() {
           if (Array.isArray(out?.concepts)) {
             setConcepts(out.concepts);
             setConceptsDirty(false);
+            setFlowHasUnsaved(false);
           }
           setMotifs(payloadMotifs(out));
           setMotifLinks(payloadMotifLinks(out));
@@ -467,7 +503,12 @@ export default function App() {
 
   async function onSaveGraph(
       nextGraph: CDG,
-      opts?: { requestAdvice?: boolean; advicePrompt?: string }
+      opts?: {
+        requestAdvice?: boolean;
+        advicePrompt?: string;
+        emitVirtualStructureMessage?: boolean;
+        saveReason?: "manual" | "auto_before_turn";
+      }
   ) {
     if (!token || !cid) return;
     setSavingGraph(true);
@@ -492,6 +533,13 @@ export default function App() {
       setCognitiveState(payloadCognitiveState(out));
       setPortfolioDocumentState(payloadPortfolioState(out));
       setConceptsDirty(false);
+      setFlowHasUnsaved(false);
+      if (opts?.emitVirtualStructureMessage) {
+        setMessages((prev) => [
+          ...prev,
+          { id: makeId("virtual_save"), role: "user", text: "已更改coginstrument结构" },
+        ]);
+      }
       if (out?.conflictGate?.blocked) {
         setMessages((prev) => [
           ...prev,
@@ -826,6 +874,14 @@ export default function App() {
     });
   }
 
+  function togglePlanStateCollapsed() {
+    setPlanStateCollapsed((prev) => {
+      const next = !prev;
+      localStorage.setItem(PLAN_STATE_PANEL_COLLAPSED_STORAGE_KEY, next ? "1" : "0");
+      return next;
+    });
+  }
+
   return (
       <div className="App">
         <TopBar
@@ -867,6 +923,8 @@ export default function App() {
                     cognitiveState={cognitiveState}
                     portfolioDocumentState={portfolioDocumentState}
                     travelPlanState={travelPlanState}
+                    collapsed={planStateCollapsed}
+                    onToggleCollapsed={togglePlanStateCollapsed}
                 />
               </div>
             </div>
@@ -942,6 +1000,7 @@ export default function App() {
                 onDraftGraphChange={setDraftGraphPreview}
                 conceptPanelCollapsed={conceptPanelCollapsed}
                 onToggleConceptPanel={toggleConceptPanelCollapsed}
+                onUnsavedStateChange={({ hasUnsaved }) => setFlowHasUnsaved(hasUnsaved)}
             />
           </div>
         </div>
