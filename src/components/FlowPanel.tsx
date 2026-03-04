@@ -19,6 +19,11 @@ import { FlowInspector } from "./flow/FlowInspector";
 import { FlowToolbar } from "./flow/FlowToolbar";
 import { MotifReasoningCanvas } from "./flow/MotifReasoningCanvas";
 import {
+    compactSemanticText,
+    findBestConceptMatch,
+    makeCanonicalFreeformSemanticKey,
+} from "../core/conceptSemantic";
+import {
     EDITABLE_PARENT_EDGE_TYPES,
     deleteNodeAndReconnect,
     findDropParent,
@@ -75,40 +80,7 @@ function mergeIncomingGraphWithLocalUi(incoming: CDG, local: CDG): CDG {
 }
 
 function cleanText(input: any, max = 220): string {
-    return String(input ?? "")
-        .replace(/\s+/g, " ")
-        .trim()
-        .slice(0, max);
-}
-
-function normalizeTextKey(input: string): string {
-    return cleanText(input, 220)
-        .toLowerCase()
-        .replace(/[^\p{L}\p{N}]+/gu, "");
-}
-
-function slug(input: string): string {
-    return cleanText(input, 220)
-        .toLowerCase()
-        .replace(/[^\p{L}\p{N}_]+/gu, "_")
-        .replace(/_+/g, "_")
-        .replace(/^_+|_+$/g, "")
-        .slice(0, 48);
-}
-
-function freeformSignature(input: string): string {
-    const base = cleanText(input, 220)
-        .toLowerCase()
-        .replace(/[^\p{L}\p{N}\s]/gu, " ")
-        .replace(/\s+/g, " ")
-        .trim();
-    const chunks = base.match(/[\u4e00-\u9fa5]{1,4}|[a-z0-9]{2,20}/g) || [];
-    const uniqChunks = Array.from(new Set(chunks)).slice(0, 10);
-    return slug(uniqChunks.join("_")) || "node";
-}
-
-function makeFreeformSemanticKey(statement: string, conceptType: CDGNode["type"]): string {
-    return `slot:freeform:${conceptType}:${freeformSignature(statement)}`;
+    return compactSemanticText(input, max);
 }
 
 function inferRelation(sentence: string): { relation: EdgeType; causalOperator: ConceptMotif["causalOperator"] } {
@@ -177,17 +149,6 @@ function resolveNodeTypeForRelation(relation: EdgeType, role: "source" | "target
     if (role === "source" && relation === "constraint") return "constraint";
     if (role === "target" && relation === "constraint") return "preference";
     return "belief";
-}
-
-function findBestConceptMatch(text: string, concepts: ConceptItem[]): ConceptItem | null {
-    const key = normalizeTextKey(text);
-    if (!key) return null;
-    for (const c of concepts || []) {
-        const titleKey = normalizeTextKey(String(c?.title || ""));
-        if (!titleKey) continue;
-        if (titleKey === key || titleKey.includes(key) || key.includes(titleKey)) return c;
-    }
-    return null;
 }
 
 export type ManualMotifDraft = {
@@ -477,8 +438,16 @@ export function FlowPanel(props: {
             return;
         }
 
-        const sourceMatch = findBestConceptMatch(split.source, concepts || []);
-        const targetMatch = findBestConceptMatch(split.target, concepts || []);
+        const sourceMatch = findBestConceptMatch(split.source, concepts || [], { minScore: 0.5 });
+        const targetMatch = findBestConceptMatch(split.target, concepts || [], { minScore: 0.5 });
+        if (sourceMatch?.id && targetMatch?.id && sourceMatch.id === targetMatch.id) {
+            setMotifComposerError(
+                en
+                    ? "Cause and effect map to the same concept. Please make each side more specific."
+                    : "原因和结果被识别为同一概念，请把两端描述得更具体。"
+            );
+            return;
+        }
         const sourceStatement = cleanText(sourceMatch?.title || split.source, 120);
         const targetStatement = cleanText(targetMatch?.title || split.target, 120);
         if (!sourceStatement || !targetStatement || sourceStatement === targetStatement) {
@@ -490,11 +459,11 @@ export function FlowPanel(props: {
         const sourceNodeType = resolveNodeTypeForRelation(inferred.relation, "source");
         const targetNodeType = resolveNodeTypeForRelation(inferred.relation, "target");
         const sourceNodeKey = cleanText(
-            sourceMatch?.semanticKey || makeFreeformSemanticKey(sourceStatement, sourceNodeType),
+            sourceMatch?.semanticKey || makeCanonicalFreeformSemanticKey(sourceStatement, sourceNodeType),
             180
         );
         const targetNodeKey = cleanText(
-            targetMatch?.semanticKey || makeFreeformSemanticKey(targetStatement, targetNodeType),
+            targetMatch?.semanticKey || makeCanonicalFreeformSemanticKey(targetStatement, targetNodeType),
             180
         );
 

@@ -20,6 +20,11 @@ import { ChatPanel, Msg } from "./components/ChatPanel";
 import { FlowPanel, type ManualMotifDraft } from "./components/FlowPanel";
 import { normalizeGraphClient } from "./core/graphSafe";
 import { ConceptPanel } from "./components/ConceptPanel";
+import {
+  canonicalizeManualSemanticKey,
+  findBestConceptForUpsert,
+  normalizeSemanticTextKey,
+} from "./core/conceptSemantic";
 
 const emptyGraph: CDG = { id: "", version: 0, nodes: [], edges: [] };
 const emptyMotifReasoningView: MotifReasoningView = { nodes: [], edges: [] };
@@ -58,7 +63,7 @@ function makeId(prefix = "m") {
 }
 
 function normalizeTextKey(input: any) {
-  return compactText(input, 220).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+  return normalizeSemanticTextKey(input);
 }
 
 function uniqStrings(arr: string[], max = 40): string[] {
@@ -534,8 +539,8 @@ export default function App() {
 
   function onCreateMotifDraft(draft: ManualMotifDraft) {
     const now = new Date().toISOString();
-    const sourceKey = compactText(draft.sourceNodeKey, 180);
-    const targetKey = compactText(draft.targetNodeKey, 180);
+    const sourceKey = canonicalizeManualSemanticKey(draft.sourceNodeKey, draft.sourceStatement, draft.sourceNodeType);
+    const targetKey = canonicalizeManualSemanticKey(draft.targetNodeKey, draft.targetStatement, draft.targetNodeType);
 
     setConcepts((prev) => {
       const current = (prev || []).slice();
@@ -547,14 +552,21 @@ export default function App() {
         nodeType: ManualMotifDraft["sourceNodeType"];
         hintId?: string;
       }) => {
-        const statementKey = normalizeTextKey(params.statement);
-        const semanticKey = String(params.semanticKey || "").toLowerCase();
-        const matched = current.find(
-            (c) =>
-                c.id === params.hintId ||
-                (semanticKey && String(c.semanticKey || "").toLowerCase() === semanticKey) ||
-                (statementKey && normalizeTextKey(c.title) === statementKey)
-        );
+        const semanticKey = canonicalizeManualSemanticKey(params.semanticKey, params.statement, params.nodeType);
+        const matchedHint = current.find((c) => c.id === params.hintId);
+        const matchedSemantic =
+          findBestConceptForUpsert({
+            statement: params.statement,
+            semanticKey,
+            nodeType: params.nodeType,
+            concepts: current,
+            minScore: 0.58,
+          }) ||
+          current.find((c) => {
+            const statementKey = normalizeTextKey(params.statement);
+            return !!statementKey && statementKey === normalizeTextKey(c.title);
+          });
+        const matched = matchedHint || matchedSemantic;
         if (matched) {
           matched.nodeIds = uniqStrings([...(matched.nodeIds || []), params.nodeId], 48);
           matched.primaryNodeId = matched.primaryNodeId || params.nodeId;
@@ -572,7 +584,7 @@ export default function App() {
           polarity: "positive",
           scope: "global",
           family: "other",
-          semanticKey: semanticKey || `slot:freeform:${params.nodeType}:${normalizeTextKey(params.statement).slice(0, 40) || "node"}`,
+          semanticKey,
           title: compactText(params.statement, 80) || "Concept",
           description: tr("由 Motif 画布手动创建", "Manually created from motif canvas"),
           score: 0.72,
