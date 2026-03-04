@@ -101,6 +101,10 @@ body {
   gap: 10px;
 }
 
+.LeftStack.LeftStack--planCollapsed {
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+
 .LeftStack__chat,
 .LeftStack__plan {
   min-height: 0;
@@ -108,12 +112,24 @@ body {
   display: flex;
 }
 
+.LeftStack.LeftStack--planCollapsed .LeftStack__plan {
+  overflow: visible;
+}
+
 .PlanStatePanel {
   border-radius: 12px;
 }
 
+.LeftStack.LeftStack--planCollapsed .PlanStatePanel {
+  height: auto;
+}
+
 .PlanStatePanel__head {
   justify-content: space-between;
+}
+
+.PlanStatePanel.is-collapsed .PlanStatePanel__head {
+  border-bottom: 0;
 }
 
 .PlanStatePanel__toggle {
@@ -1627,6 +1643,10 @@ body {
 
   .LeftStack {
     grid-template-rows: minmax(0, 1fr) 180px;
+  }
+
+  .LeftStack.LeftStack--planCollapsed {
+    grid-template-rows: minmax(0, 1fr) auto;
   }
 
   .MotifReasoningCanvas__steps {

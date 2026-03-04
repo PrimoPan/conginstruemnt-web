@@ -42,7 +42,7 @@ export function PlanStatePanel(props: {
   const planVersion = Number(travelPlanState?.plan_version || travelPlanState?.version || 1);
 
   return (
-    <div className="Panel PlanStatePanel">
+    <div className={`Panel PlanStatePanel ${collapsed ? "is-collapsed" : ""}`}>
       <div className="PanelHeader PlanStatePanel__head">
         <span>{tr(locale, "计划状态", "Plan State")}</span>
         <button
@@ -86,11 +86,7 @@ export function PlanStatePanel(props: {
         </div>
         {taskReason ? <div className="PlanStatePanel__reason">{taskReason}</div> : null}
       </div>
-      ) : (
-        <div className="PlanStatePanel__summary">
-          {tr(locale, "默认收起，点击“展开”查看任务状态详情。", "Collapsed by default. Click Expand to view details.")}
-        </div>
-      )}
+      ) : null}
     </div>
   );
 }

@@ -609,7 +609,17 @@ export default function App() {
         m.id === motifId ? { ...m, ...patch, updatedAt: new Date().toISOString() } : m
     );
     setMotifs(nextMotifs);
-    setMotifReasoningView(emptyMotifReasoningView);
+    const hasStructureMutation =
+      Object.prototype.hasOwnProperty.call(patch, "conceptIds") ||
+      Object.prototype.hasOwnProperty.call(patch, "concept_bindings") ||
+      Object.prototype.hasOwnProperty.call(patch, "anchorConceptId") ||
+      Object.prototype.hasOwnProperty.call(patch, "roles") ||
+      Object.prototype.hasOwnProperty.call(patch, "relation") ||
+      Object.prototype.hasOwnProperty.call(patch, "dependencyClass") ||
+      Object.prototype.hasOwnProperty.call(patch, "causalOperator");
+    if (hasStructureMutation) {
+      setMotifReasoningView(emptyMotifReasoningView);
+    }
 
     const nextStatus = String((patch as any)?.status || "").trim().toLowerCase();
     if (nextStatus) {
@@ -905,7 +915,7 @@ export default function App() {
 
         <div className={mainCls}>
           <div className="Left">
-            <div className="LeftStack">
+            <div className={`LeftStack ${planStateCollapsed ? "LeftStack--planCollapsed" : ""}`}>
               <div className="LeftStack__chat">
                 <ChatPanel
                     locale={locale}

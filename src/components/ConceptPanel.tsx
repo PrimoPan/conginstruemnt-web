@@ -502,9 +502,9 @@ export function ConceptPanel(props: {
                                                 onPatchMotif(m.id, {
                                                     status: disabling ? "cancelled" : "active",
                                                     statusReason: disabling ? "user_cancelled" : "user_reenabled",
-                                                    resolved: disabling ? true : false,
-                                                    resolvedBy: disabling ? "user" : undefined,
-                                                    resolvedAt: disabling ? new Date().toISOString() : undefined,
+                                                    resolved: true,
+                                                    resolvedBy: "user",
+                                                    resolvedAt: new Date().toISOString(),
                                                     novelty: "updated",
                                                     updatedAt: new Date().toISOString(),
                                                 });
