@@ -1389,6 +1389,29 @@ body {
   gap: 8px;
 }
 
+.MotifEditor__sectionTitle {
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(15, 23, 42, 0.78);
+}
+
+.MotifEditor__readonly {
+  border-radius: 10px;
+  border: 1px dashed rgba(148, 163, 184, 0.5);
+  background: rgba(248, 250, 252, 0.92);
+  color: rgba(15, 23, 42, 0.74);
+  font-size: 12px;
+  line-height: 1.4;
+  padding: 8px 10px;
+}
+
+.MotifEditor__conceptRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: end;
+}
+
 @media (max-width: 1440px) {
   .Main {
     grid-template-columns: minmax(380px, 1fr) 320px minmax(500px, 1.2fr);

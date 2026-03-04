@@ -1,5 +1,13 @@
 import React, { useMemo, useState } from "react";
-import type { AppLocale, ConceptItem, ConceptMotif } from "../core/type";
+import type {
+    AppLocale,
+    ConceptItem,
+    ConceptMotif,
+    ContextItem,
+    EdgeType,
+    MotifCausalOperator,
+    MotifLifecycleStatus,
+} from "../core/type";
 
 function clamp01(v: any, fallback = 0.7) {
     const n = Number(v);
@@ -96,11 +104,59 @@ function causalOperatorLabel(locale: AppLocale, op?: ConceptMotif["causalOperato
 }
 
 type TabKey = "concept" | "motif";
+type MotifEditDraft = {
+    title: string;
+    description: string;
+    status: MotifLifecycleStatus;
+    sourceConceptIds: string[];
+    targetConceptId: string;
+    causalOperator: MotifCausalOperator;
+};
+
+const MOTIF_STATUS_OPTIONS: MotifLifecycleStatus[] = ["active", "uncertain", "deprecated", "disabled", "cancelled"];
+const CAUSAL_OPERATOR_OPTIONS: MotifCausalOperator[] = [
+    "direct_causation",
+    "mediated_causation",
+    "confounding",
+    "intervention",
+    "contradiction",
+];
+
+function motifPatternFromIds(sourceIds: string[], targetId: string, conceptNoById: Map<string, number>) {
+    if (!sourceIds.length || !targetId) return "concept_a -> concept_b";
+    const ref = (id: string) => {
+        const no = conceptNoById.get(id);
+        return no ? `C${no}` : cleanText(id, 16);
+    };
+    return `${sourceIds.map(ref).join(" + ")} -> ${ref(targetId)}`;
+}
+
+function relationFromCausalOperator(op: MotifCausalOperator): EdgeType {
+    if (op === "confounding") return "constraint";
+    if (op === "intervention") return "determine";
+    if (op === "contradiction") return "conflicts_with";
+    return "enable";
+}
+
+function semanticMotifTypeFromRelation(relation: EdgeType): ConceptMotif["motif_type"] {
+    if (relation === "constraint") return "constraint";
+    if (relation === "determine") return "determine";
+    return "enable";
+}
+
+function defaultCausalOperator(m: ConceptMotif): MotifCausalOperator {
+    const dep = m.dependencyClass || m.relation;
+    if (dep === "constraint") return "confounding";
+    if (dep === "determine") return "intervention";
+    if (dep === "conflicts_with") return "contradiction";
+    return m.motifType === "triad" ? "mediated_causation" : "direct_causation";
+}
 
 export function ConceptPanel(props: {
     locale: AppLocale;
     concepts: ConceptItem[];
     motifs: ConceptMotif[];
+    contexts?: ContextItem[];
     activeConceptId?: string;
     activeMotifId?: string;
     saving?: boolean;
@@ -116,6 +172,7 @@ export function ConceptPanel(props: {
         locale,
         concepts,
         motifs,
+        contexts,
         activeConceptId,
         activeMotifId,
         saving,
@@ -129,8 +186,7 @@ export function ConceptPanel(props: {
     } = props;
     const [tab, setTab] = useState<TabKey>("concept");
     const [editingMotifId, setEditingMotifId] = useState("");
-    const [editingMotifTitle, setEditingMotifTitle] = useState("");
-    const [editingMotifDesc, setEditingMotifDesc] = useState("");
+    const [editingMotifDraft, setEditingMotifDraft] = useState<MotifEditDraft | null>(null);
 
     const conceptById = useMemo(() => new Map((concepts || []).map((c) => [c.id, c])), [concepts]);
     const conceptNoById = useMemo(() => {
@@ -159,6 +215,67 @@ export function ConceptPanel(props: {
         () => (activeMotifId ? motifList.find((m) => m.id === activeMotifId) || null : null),
         [activeMotifId, motifList]
     );
+
+    const contextTitlesByMotifId = useMemo(() => {
+        const out = new Map<string, string[]>();
+        for (const ctx of contexts || []) {
+            const label = cleanText(ctx?.title, 72) || cleanText(ctx?.summary, 96) || cleanText(ctx?.key, 72);
+            if (!label) continue;
+            for (const rawMotifId of ctx?.motifIds || []) {
+                const motifId = cleanText(rawMotifId, 120);
+                if (!motifId) continue;
+                if (!out.has(motifId)) out.set(motifId, []);
+                const arr = out.get(motifId)!;
+                if (!arr.includes(label)) arr.push(label);
+            }
+        }
+        return out;
+    }, [contexts]);
+
+    const conceptSelectOptions = useMemo(
+        () =>
+            (concepts || []).map((c) => ({
+                id: c.id,
+                label: `${conceptNoById.get(c.id) ? `C${conceptNoById.get(c.id)}` : cleanText(c.id, 14)} · ${cleanText(c.title, 56)}`,
+            })),
+        [concepts, conceptNoById]
+    );
+
+    const resetMotifEditor = () => {
+        setEditingMotifId("");
+        setEditingMotifDraft(null);
+    };
+
+    const startMotifEdit = (m: ConceptMotif) => {
+        const ids = uniq((m.conceptIds || []).map((id) => cleanText(id, 100)), 8);
+        let targetId = cleanText(m.anchorConceptId, 100) || ids[ids.length - 1] || "";
+        if (!targetId || !conceptById.has(targetId)) {
+            targetId = ids.find((id) => conceptById.has(id)) || concepts[0]?.id || "";
+        }
+        let sourceIds = ids.filter((id) => id && id !== targetId);
+        if (!sourceIds.length) {
+            const fallback = concepts.find((c) => c.id !== targetId)?.id || "";
+            if (fallback) sourceIds = [fallback];
+        }
+        if (!sourceIds.length && targetId) {
+            sourceIds = [targetId];
+        }
+
+        setEditingMotifId(m.id);
+        setEditingMotifDraft({
+            title: m.title,
+            description: m.description || "",
+            status: m.status,
+            sourceConceptIds: sourceIds,
+            targetConceptId: targetId,
+            causalOperator: m.causalOperator || defaultCausalOperator(m),
+        });
+    };
+
+    const pickUnusedConceptId = (exclude: string[]) => {
+        const used = new Set(exclude.filter(Boolean));
+        return concepts.find((c) => !used.has(c.id))?.id || "";
+    };
 
     return (
         <div className="Panel ConceptPanel">
@@ -288,7 +405,7 @@ export function ConceptPanel(props: {
                 ) : null}
 
                 {tab === "motif"
-                    ? motifList.map((m) => {
+                    ? motifList.map((m, motifIdx) => {
                         const active = m.id === activeMotifId;
                         const isUpdatedThisTurn = m.novelty === "new" || m.novelty === "updated";
                         const confidencePct = Math.round(clamp01(m.confidence, 0.72) * 100);
@@ -307,6 +424,23 @@ export function ConceptPanel(props: {
                         const pattern = motifPattern(m, conceptNoById);
                         const causalFormula = pattern;
                         const isEditing = editingMotifId === m.id;
+                        const draft = isEditing ? editingMotifDraft : null;
+                        const contextLabels = contextTitlesByMotifId.get(m.id) || [];
+                        const contextLabel = contextLabels.length
+                            ? contextLabels.join(" / ")
+                            : tr(locale, "当前无关联 Context", "No linked context");
+                        const draftPattern = draft
+                            ? motifPatternFromIds(
+                                uniq(
+                                    (draft.sourceConceptIds || [])
+                                        .map((id) => cleanText(id, 100))
+                                        .filter((id) => id && id !== cleanText(draft.targetConceptId, 100)),
+                                    7
+                                ),
+                                cleanText(draft.targetConceptId, 100),
+                                conceptNoById
+                            )
+                            : pattern;
                         return (
                             <div
                                 key={m.id}
@@ -381,12 +515,10 @@ export function ConceptPanel(props: {
                                         <button
                                             type="button"
                                             className="ConceptCard__iconBtn"
-                                            title={tr(locale, "编辑 motif 标题与说明", "Edit motif title and description")}
+                                            title={tr(locale, "编辑 motif（标题/状态/结构）", "Edit motif (title/status/structure)")}
                                             onClick={(e) => {
                                                 e.stopPropagation();
-                                                setEditingMotifId(m.id);
-                                                setEditingMotifTitle(m.title);
-                                                setEditingMotifDesc(m.description || "");
+                                                startMotifEdit(m);
                                             }}
                                         >
                                             ✍️
@@ -419,37 +551,165 @@ export function ConceptPanel(props: {
                                     <span>{confidencePct}%</span>
                                 </div>
 
-                                {isEditing ? (
+                                {isEditing && draft ? (
                                     <div
                                         className="ConceptEditor ConceptPanel__editorInline"
                                         onClick={(e) => e.stopPropagation()}
                                     >
-                                        <div className="ConceptEditor__title">{tr(locale, "编辑 Motif", "Edit Motif")}</div>
+                                        <div className="ConceptEditor__title">{tr(locale, "编辑 Motif 实例", "Edit Motif Instance")}</div>
                                         <label className="FlowInspector__fieldLabel">
                                             {tr(locale, "标题", "Title")}
                                             <input
                                                 className="FlowInspector__input"
-                                                value={editingMotifTitle}
-                                                onChange={(e) => setEditingMotifTitle(e.target.value)}
+                                                value={draft.title}
+                                                onChange={(e) =>
+                                                    setEditingMotifDraft((prev) => (prev ? { ...prev, title: e.target.value } : prev))
+                                                }
                                             />
                                         </label>
                                         <label className="FlowInspector__fieldLabel">
                                             {tr(locale, "描述", "Description")}
                                             <textarea
                                                 className="FlowInspector__editor"
-                                                value={editingMotifDesc}
-                                                onChange={(e) => setEditingMotifDesc(e.target.value)}
+                                                value={draft.description}
+                                                onChange={(e) =>
+                                                    setEditingMotifDraft((prev) => (prev ? { ...prev, description: e.target.value } : prev))
+                                                }
                                             />
                                         </label>
+                                        <label className="FlowInspector__fieldLabel">
+                                            {tr(locale, "状态", "Status")}
+                                            <select
+                                                className="FlowInspector__select"
+                                                value={draft.status}
+                                                onChange={(e) =>
+                                                    setEditingMotifDraft((prev) =>
+                                                        prev ? { ...prev, status: e.target.value as MotifLifecycleStatus } : prev
+                                                    )
+                                                }
+                                            >
+                                                {MOTIF_STATUS_OPTIONS.map((status) => (
+                                                    <option key={`${m.id}_status_${status}`} value={status}>
+                                                        {motifStatusLabel(locale, status)}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </label>
+                                        <div className="MotifEditor__sectionTitle">
+                                            {tr(locale, "Structure（概念依赖结构）", "Structure (concept dependency)")}
+                                        </div>
+                                        <div className="MotifEditor__sectionTitle">{`Motif ${motifIdx + 1} (${draftPattern})`}</div>
+                                        <div className="MotifCard__pattern">
+                                            {tr(locale, "Pattern：", "Pattern: ")}
+                                            {draftPattern}
+                                        </div>
+                                        {(draft.sourceConceptIds || []).map((sourceId, idx) => (
+                                            <div key={`${m.id}_src_${idx}`} className="MotifEditor__conceptRow">
+                                                <label className="FlowInspector__fieldLabel">
+                                                    {`Concept ${idx + 1}`}
+                                                    <select
+                                                        className="FlowInspector__select"
+                                                        value={sourceId}
+                                                        onChange={(e) =>
+                                                            setEditingMotifDraft((prev) => {
+                                                                if (!prev) return prev;
+                                                                const nextSources = prev.sourceConceptIds.slice();
+                                                                nextSources[idx] = e.target.value;
+                                                                return { ...prev, sourceConceptIds: nextSources };
+                                                            })
+                                                        }
+                                                    >
+                                                        <option value="">{tr(locale, "请选择 concept", "Select concept")}</option>
+                                                        {conceptSelectOptions.map((opt) => (
+                                                            <option key={`${m.id}_srcopt_${idx}_${opt.id}`} value={opt.id}>
+                                                                {opt.label}
+                                                            </option>
+                                                        ))}
+                                                    </select>
+                                                </label>
+                                                <button
+                                                    type="button"
+                                                    className="Btn FlowToolbar__btn"
+                                                    disabled={(draft.sourceConceptIds || []).length <= 1}
+                                                    onClick={() =>
+                                                        setEditingMotifDraft((prev) => {
+                                                            if (!prev) return prev;
+                                                            if ((prev.sourceConceptIds || []).length <= 1) return prev;
+                                                            const nextSources = prev.sourceConceptIds.slice();
+                                                            nextSources.splice(idx, 1);
+                                                            return { ...prev, sourceConceptIds: nextSources };
+                                                        })
+                                                    }
+                                                >
+                                                    {tr(locale, "移除", "Remove")}
+                                                </button>
+                                            </div>
+                                        ))}
+                                        <button
+                                            type="button"
+                                            className="Btn FlowToolbar__btn"
+                                            onClick={() =>
+                                                setEditingMotifDraft((prev) => {
+                                                    if (!prev) return prev;
+                                                    const nextSource = pickUnusedConceptId([
+                                                        ...prev.sourceConceptIds,
+                                                        prev.targetConceptId,
+                                                    ]);
+                                                    return {
+                                                        ...prev,
+                                                        sourceConceptIds: [...prev.sourceConceptIds, nextSource],
+                                                    };
+                                                })
+                                            }
+                                        >
+                                            {tr(locale, "+ 添加 Concept（前置）", "+ Add source concept")}
+                                        </button>
+                                        <label className="FlowInspector__fieldLabel">
+                                            {`Concept ${(draft.sourceConceptIds || []).length + 1} ${tr(locale, "（目标）", "(target)")}`}
+                                            <select
+                                                className="FlowInspector__select"
+                                                value={draft.targetConceptId}
+                                                onChange={(e) =>
+                                                    setEditingMotifDraft((prev) =>
+                                                        prev ? { ...prev, targetConceptId: e.target.value } : prev
+                                                    )
+                                                }
+                                            >
+                                                <option value="">{tr(locale, "请选择 concept", "Select concept")}</option>
+                                                {conceptSelectOptions.map((opt) => (
+                                                    <option key={`${m.id}_target_${opt.id}`} value={opt.id}>
+                                                        {opt.label}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </label>
+                                        <label className="FlowInspector__fieldLabel">
+                                            {tr(locale, "Causal Type", "Causal Type")}
+                                            <select
+                                                className="FlowInspector__select"
+                                                value={draft.causalOperator}
+                                                onChange={(e) =>
+                                                    setEditingMotifDraft((prev) =>
+                                                        prev ? { ...prev, causalOperator: e.target.value as MotifCausalOperator } : prev
+                                                    )
+                                                }
+                                            >
+                                                {CAUSAL_OPERATOR_OPTIONS.map((op) => (
+                                                    <option key={`${m.id}_op_${op}`} value={op}>
+                                                        {causalOperatorLabel(locale, op)}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </label>
+                                        <div className="MotifEditor__sectionTitle">
+                                            {tr(locale, "Context（只读）", "Context (read-only)")}
+                                        </div>
+                                        <div className="MotifEditor__readonly">{contextLabel}</div>
                                         <div className="ConceptEditor__actions">
                                             <button
                                                 type="button"
                                                 className="Btn FlowToolbar__btn"
-                                                onClick={() => {
-                                                    setEditingMotifId("");
-                                                    setEditingMotifTitle("");
-                                                    setEditingMotifDesc("");
-                                                }}
+                                                onClick={resetMotifEditor}
                                             >
                                                 {tr(locale, "取消", "Cancel")}
                                             </button>
@@ -457,15 +717,82 @@ export function ConceptPanel(props: {
                                                 type="button"
                                                 className="Btn FlowToolbar__btn"
                                                 onClick={() => {
-                                                    onPatchMotif(m.id, {
-                                                        title: cleanText(editingMotifTitle, 160) || m.title,
-                                                        description: cleanText(editingMotifDesc, 320),
+                                                    const nextTargetRaw = cleanText(draft.targetConceptId, 100);
+                                                    const nextSourceRaw = uniq(
+                                                        (draft.sourceConceptIds || [])
+                                                            .map((id) => cleanText(id, 100))
+                                                            .filter(Boolean),
+                                                        7
+                                                    ).filter((id) => id !== nextTargetRaw);
+
+                                                    let targetId = nextTargetRaw;
+                                                    let sourceIds = nextSourceRaw.slice();
+                                                    if (!targetId) {
+                                                        targetId =
+                                                            cleanText(m.anchorConceptId, 100) ||
+                                                            sourceIds[sourceIds.length - 1] ||
+                                                            "";
+                                                    }
+                                                    sourceIds = sourceIds.filter((id) => id !== targetId);
+                                                    if (!sourceIds.length) {
+                                                        const fallback =
+                                                            (m.conceptIds || [])
+                                                                .map((id) => cleanText(id, 100))
+                                                                .find((id) => id && id !== targetId) ||
+                                                            pickUnusedConceptId([targetId]);
+                                                        if (fallback) sourceIds = [fallback];
+                                                    }
+
+                                                    const combined = uniq([...sourceIds, targetId].filter(Boolean), 8);
+                                                    const finalTarget = cleanText(targetId, 100) || combined[combined.length - 1] || "";
+                                                    const finalSources = combined.filter((id) => id !== finalTarget);
+                                                    if (!finalTarget || !finalSources.length) {
+                                                        resetMotifEditor();
+                                                        return;
+                                                    }
+
+                                                    const conceptIds = uniq([...finalSources, finalTarget], 8);
+                                                    const relation = relationFromCausalOperator(draft.causalOperator);
+                                                    const nextMotifType: ConceptMotif["motifType"] =
+                                                        draft.causalOperator === "mediated_causation" || conceptIds.length >= 3
+                                                            ? "triad"
+                                                            : "pair";
+                                                    const now = new Date().toISOString();
+                                                    const patch: Partial<ConceptMotif> = {
+                                                        title: cleanText(draft.title, 160) || m.title,
+                                                        description: cleanText(draft.description, 320),
+                                                        relation,
+                                                        dependencyClass: relation,
+                                                        causalOperator: draft.causalOperator,
+                                                        motifType: nextMotifType,
+                                                        motif_type: semanticMotifTypeFromRelation(relation),
+                                                        conceptIds,
+                                                        concept_bindings: conceptIds,
+                                                        anchorConceptId: finalTarget,
+                                                        roles: {
+                                                            sources: finalSources,
+                                                            target: finalTarget,
+                                                        },
                                                         novelty: "updated",
-                                                        updatedAt: new Date().toISOString(),
-                                                    });
-                                                    setEditingMotifId("");
-                                                    setEditingMotifTitle("");
-                                                    setEditingMotifDesc("");
+                                                        updatedAt: now,
+                                                    };
+
+                                                    if (draft.status !== m.status) {
+                                                        patch.status = draft.status;
+                                                        patch.statusReason = `user_status_${draft.status}`;
+                                                        if (draft.status === "disabled") {
+                                                            patch.resolved = true;
+                                                            patch.resolvedBy = "user";
+                                                            patch.resolvedAt = now;
+                                                        } else if (m.status === "disabled") {
+                                                            patch.resolved = false;
+                                                            patch.resolvedBy = undefined;
+                                                            patch.resolvedAt = undefined;
+                                                        }
+                                                    }
+
+                                                    onPatchMotif(m.id, patch);
+                                                    resetMotifEditor();
                                                 }}
                                             >
                                                 {tr(locale, "保存", "Save")}

@@ -574,6 +574,7 @@ export default function App() {
                   locale={locale}
                   concepts={conceptsView}
                   motifs={motifs}
+                  contexts={contexts}
                   activeConceptId={activeConceptId}
                   activeMotifId={activeMotifId}
                   saving={savingGraph}
