@@ -17,7 +17,7 @@ import type {
 } from "./core/type";
 import { TopBar } from "./components/TopBar";
 import { ChatPanel, Msg } from "./components/ChatPanel";
-import { FlowPanel } from "./components/FlowPanel";
+import { FlowPanel, type ManualMotifDraft } from "./components/FlowPanel";
 import { normalizeGraphClient } from "./core/graphSafe";
 import { ConceptPanel } from "./components/ConceptPanel";
 
@@ -55,6 +55,52 @@ function makeId(prefix = "m") {
   const uuid = (globalThis.crypto as any)?.randomUUID?.();
   if (uuid) return `${prefix}_${uuid}`;
   return `${prefix}_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+}
+
+function normalizeTextKey(input: any) {
+  return compactText(input, 220).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+}
+
+function uniqStrings(arr: string[], max = 40): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of arr || []) {
+    const x = compactText(raw, 160);
+    if (!x || seen.has(x)) continue;
+    seen.add(x);
+    out.push(x);
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
+function stableConceptIdFromManual(semanticKey: string, kind: ConceptItem["kind"], polarity = "positive", scope = "global") {
+  const raw = `semantic:${String(semanticKey || "").toLowerCase()}|${kind}|${polarity}|${scope}`;
+  const safe = raw
+      .toLowerCase()
+      .replace(/[^a-z0-9_\-:]/g, "_")
+      .replace(/_+/g, "_")
+      .replace(/^_+|_+$/g, "");
+  return `c_${(safe || "other").slice(0, 90)}`;
+}
+
+function semanticMotifTypeFromRelation(relation: ConceptMotif["relation"]): ConceptMotif["motif_type"] {
+  if (relation === "constraint") return "constraint";
+  if (relation === "determine") return "determine";
+  return "enable";
+}
+
+function relationToLinkType(relation: ConceptMotif["relation"]): MotifLink["type"] {
+  if (relation === "conflicts_with") return "conflicts_with";
+  if (relation === "determine") return "precedes";
+  return "supports";
+}
+
+function kindFromNodeType(nodeType: ManualMotifDraft["sourceNodeType"]): ConceptItem["kind"] {
+  if (nodeType === "constraint") return "constraint";
+  if (nodeType === "preference") return "preference";
+  if (nodeType === "belief") return "belief";
+  return "factual_assertion";
 }
 
 function normalizeReasoningViewPayload(
@@ -448,6 +494,7 @@ export default function App() {
         m.id === motifId ? { ...m, ...patch, updatedAt: new Date().toISOString() } : m
     );
     setMotifs(nextMotifs);
+    setMotifReasoningView(emptyMotifReasoningView);
 
     const nextStatus = String((patch as any)?.status || "").trim().toLowerCase();
     if (nextStatus) {
@@ -482,6 +529,171 @@ export default function App() {
       }
     }
 
+    setConceptsDirty(true);
+  }
+
+  function onCreateMotifDraft(draft: ManualMotifDraft) {
+    const now = new Date().toISOString();
+    const sourceKey = compactText(draft.sourceNodeKey, 180);
+    const targetKey = compactText(draft.targetNodeKey, 180);
+
+    setConcepts((prev) => {
+      const current = (prev || []).slice();
+
+      const upsertConcept = (params: {
+        statement: string;
+        semanticKey: string;
+        nodeId: string;
+        nodeType: ManualMotifDraft["sourceNodeType"];
+        hintId?: string;
+      }) => {
+        const statementKey = normalizeTextKey(params.statement);
+        const semanticKey = String(params.semanticKey || "").toLowerCase();
+        const matched = current.find(
+            (c) =>
+                c.id === params.hintId ||
+                (semanticKey && String(c.semanticKey || "").toLowerCase() === semanticKey) ||
+                (statementKey && normalizeTextKey(c.title) === statementKey)
+        );
+        if (matched) {
+          matched.nodeIds = uniqStrings([...(matched.nodeIds || []), params.nodeId], 48);
+          matched.primaryNodeId = matched.primaryNodeId || params.nodeId;
+          matched.sourceMsgIds = uniqStrings([...(matched.sourceMsgIds || []), "manual_motif_input"], 80);
+          matched.updatedAt = now;
+          return matched;
+        }
+
+        const kind = kindFromNodeType(params.nodeType);
+        const concept: ConceptItem = {
+          id: stableConceptIdFromManual(semanticKey || params.statement, kind, "positive", "global"),
+          kind,
+          validationStatus: "resolved",
+          extractionStage: "disambiguation",
+          polarity: "positive",
+          scope: "global",
+          family: "other",
+          semanticKey: semanticKey || `slot:freeform:${params.nodeType}:${normalizeTextKey(params.statement).slice(0, 40) || "node"}`,
+          title: compactText(params.statement, 80) || "Concept",
+          description: tr("由 Motif 画布手动创建", "Manually created from motif canvas"),
+          score: 0.72,
+          nodeIds: [params.nodeId],
+          primaryNodeId: params.nodeId,
+          evidenceTerms: uniqStrings([compactText(params.statement, 30)], 8),
+          sourceMsgIds: ["manual_motif_input"],
+          motifIds: [],
+          migrationHistory: ["manual_created:motif_canvas"],
+          locked: false,
+          paused: false,
+          updatedAt: now,
+        };
+        current.push(concept);
+        return concept;
+      };
+
+      const sourceConcept = upsertConcept({
+        statement: draft.sourceStatement,
+        semanticKey: sourceKey,
+        nodeId: draft.sourceNodeId,
+        nodeType: draft.sourceNodeType,
+        hintId: draft.sourceConceptHintId,
+      });
+      const targetConcept = upsertConcept({
+        statement: draft.targetStatement,
+        semanticKey: targetKey,
+        nodeId: draft.targetNodeId,
+        nodeType: draft.targetNodeType,
+        hintId: draft.targetConceptHintId,
+      });
+
+      const motifId = makeId("m_manual");
+      const conceptIds = [sourceConcept.id, targetConcept.id];
+      const newMotif: ConceptMotif = {
+        id: motifId,
+        motif_id: motifId,
+        motif_type: semanticMotifTypeFromRelation(draft.relation),
+        templateKey: `manual:${draft.relation}`,
+        motifType: "pair",
+        relation: draft.relation,
+        roles: { sources: [sourceConcept.id], target: targetConcept.id },
+        scope: "global",
+        aliases: uniqStrings([motifId, "manual_motif"], 24),
+        concept_bindings: conceptIds,
+        conceptIds,
+        anchorConceptId: targetConcept.id,
+        title: compactText(`${sourceConcept.title} → ${targetConcept.title}`, 160),
+        description: compactText(draft.sentence, 320),
+        confidence: 0.82,
+        supportEdgeIds: [draft.edgeId],
+        supportNodeIds: [draft.sourceNodeId, draft.targetNodeId],
+        status: "active",
+        statusReason: "user_created_in_motif_canvas",
+        resolved: false,
+        causalOperator: draft.causalOperator,
+        causalFormula: `${compactText(sourceConcept.title, 60)} -> ${compactText(targetConcept.title, 60)}`,
+        dependencyClass: draft.relation,
+        novelty: "new",
+        updatedAt: now,
+      };
+
+      setMotifs((prevMotifs) => {
+        const all = [...(prevMotifs || []), newMotif];
+        setActiveMotifId(newMotif.id);
+
+        setMotifLinks((prevLinks) => {
+          const currentLinks = (prevLinks || []).slice();
+          const existing = (prevMotifs || []).slice();
+          const pending: MotifLink[] = [];
+          for (const m of existing) {
+            if (!m || m.status === "cancelled") continue;
+            const mSources = (m.conceptIds || []).filter((id) => id !== m.anchorConceptId);
+            const mTarget = m.anchorConceptId;
+            const shareConcept = (m.conceptIds || []).some((id) => conceptIds.includes(id));
+            if (!shareConcept) continue;
+
+            let from = "";
+            let to = "";
+            if (mTarget && mTarget === sourceConcept.id) {
+              from = m.id;
+              to = newMotif.id;
+            } else if (targetConcept.id && mSources.includes(targetConcept.id)) {
+              from = newMotif.id;
+              to = m.id;
+            } else if (m.relation !== newMotif.relation) {
+              from = m.id;
+              to = newMotif.id;
+            } else {
+              from = m.id;
+              to = newMotif.id;
+            }
+            if (!from || !to || from === to) continue;
+            const type =
+                m.relation === "conflicts_with" || newMotif.relation === "conflicts_with"
+                    ? "conflicts_with"
+                    : relationToLinkType(newMotif.relation);
+            const existsLink = currentLinks.some((x) => x.fromMotifId === from && x.toMotifId === to && x.type === type);
+            if (existsLink) continue;
+            pending.push({
+              id: makeId("ml_manual"),
+              fromMotifId: from,
+              toMotifId: to,
+              type,
+              confidence: 0.74,
+              source: "user",
+              updatedAt: now,
+            });
+            if (pending.length >= 3) break;
+          }
+          return [...currentLinks, ...pending];
+        });
+
+        return all;
+      });
+
+      return current;
+    });
+
+    setMotifReasoningView(emptyMotifReasoningView);
+    setActiveConceptId("");
     setConceptsDirty(true);
   }
 
@@ -591,10 +803,28 @@ export default function App() {
                   onPatchConcept={onPatchConcept}
                   onPatchMotif={onPatchMotif}
               />
+              <button
+                  type="button"
+                  className="ConceptPanelEdgeToggle is-expanded"
+                  title={tr("收起 Concept/Motif 列表", "Collapse Concept/Motif panel")}
+                  onClick={toggleConceptPanelCollapsed}
+              >
+                {tr("收起", "Collapse")}
+              </button>
             </div>
           ) : null}
 
           <div className="Right">
+            {conceptPanelCollapsed ? (
+              <button
+                  type="button"
+                  className="ConceptPanelEdgeToggle is-collapsed"
+                  title={tr("展开 Concept/Motif 列表", "Expand Concept/Motif panel")}
+                  onClick={toggleConceptPanelCollapsed}
+              >
+                {tr("展开", "Expand")}
+              </button>
+            ) : null}
             <FlowPanel
                 locale={locale}
                 graph={graph}
@@ -610,6 +840,7 @@ export default function App() {
                 onSelectConcept={(conceptId) => {
                   setActiveConceptId(conceptId);
                 }}
+                onCreateMotifDraft={onCreateMotifDraft}
                 onSaveGraph={onSaveGraph}
                 savingGraph={savingGraph}
                 extraDirty={conceptsDirty}
