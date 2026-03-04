@@ -145,6 +145,7 @@ export type GraphSaveResponse = {
     updatedAt: string;
     assistantText?: string;
     adviceError?: string;
+    conflictGate?: ConflictGatePayload | null;
 };
 
 export type ConceptSaveResponse = {

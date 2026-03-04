@@ -113,7 +113,7 @@ type MotifEditDraft = {
     causalOperator: MotifCausalOperator;
 };
 
-const MOTIF_STATUS_OPTIONS: MotifLifecycleStatus[] = ["active", "uncertain", "deprecated", "disabled", "cancelled"];
+const USER_MOTIF_STATUS_OPTIONS: MotifLifecycleStatus[] = ["active", "disabled"];
 const CAUSAL_OPERATOR_OPTIONS: MotifCausalOperator[] = [
     "direct_causation",
     "mediated_causation",
@@ -265,7 +265,7 @@ export function ConceptPanel(props: {
         setEditingMotifDraft({
             title: m.title,
             description: m.description || "",
-            status: m.status,
+            status: m.status === "disabled" ? "disabled" : "active",
             sourceConceptIds: sourceIds,
             targetConceptId: targetId,
             causalOperator: m.causalOperator || defaultCausalOperator(m),
@@ -446,7 +446,7 @@ export function ConceptPanel(props: {
                                 key={m.id}
                                 className={`ConceptCard ConceptCard--motifLite status-${m.status} ${
                                     active ? "is-selected" : ""
-                                } ${isUpdatedThisTurn ? "is-updated" : ""}`}
+                                } ${isUpdatedThisTurn ? "is-updated" : ""} ${isEditing ? "is-editing" : ""}`}
                                 role="button"
                                 tabIndex={0}
                                 onClick={() => {
@@ -526,30 +526,34 @@ export function ConceptPanel(props: {
                                     </div>
                                 </div>
 
-                                <div className="ConceptCard__desc">{m.description || tr(locale, "暂无说明", "No description")}</div>
-                                <div className="MotifCard__pattern">
-                                    {dependencyLabel(locale, m.dependencyClass || m.relation)} · {causalOperatorLabel(locale, m.causalOperator)}
-                                </div>
-                                <div className="MotifCard__pattern">{causalFormula}</div>
-                                <div className="MotifCard__concepts">
-                                    {conceptRefs.slice(0, 4).map((ref) => (
-                                        <span key={`${m.id}_c_${ref.id}`} className="MotifCard__conceptTag">
-                                            {ref.code}
-                                        </span>
-                                    ))}
-                                    {conceptRefs.length > 4 ? (
-                                        <span className="MotifCard__conceptTag">+{conceptRefs.length - 4}</span>
-                                    ) : null}
-                                </div>
-                                <div className="MotifCard__progress">
-                                    {[0, 1, 2, 3].map((i) => (
-                                        <span key={`${m.id}_p_${i}`} className={`MotifCard__bar ${i < barsOn ? "is-on" : ""}`} />
-                                    ))}
-                                </div>
-                                <div className="ConceptCard__foot">
-                                    <span>{refs.length ? refs.join(" ") : tr(locale, "来源: n/a", "source: n/a")}</span>
-                                    <span>{confidencePct}%</span>
-                                </div>
+                                {!isEditing ? (
+                                    <>
+                                        <div className="ConceptCard__desc">{m.description || tr(locale, "暂无说明", "No description")}</div>
+                                        <div className="MotifCard__pattern">
+                                            {dependencyLabel(locale, m.dependencyClass || m.relation)} · {causalOperatorLabel(locale, m.causalOperator)}
+                                        </div>
+                                        <div className="MotifCard__pattern">{causalFormula}</div>
+                                        <div className="MotifCard__concepts">
+                                            {conceptRefs.slice(0, 4).map((ref) => (
+                                                <span key={`${m.id}_c_${ref.id}`} className="MotifCard__conceptTag">
+                                                    {ref.code}
+                                                </span>
+                                            ))}
+                                            {conceptRefs.length > 4 ? (
+                                                <span className="MotifCard__conceptTag">+{conceptRefs.length - 4}</span>
+                                            ) : null}
+                                        </div>
+                                        <div className="MotifCard__progress">
+                                            {[0, 1, 2, 3].map((i) => (
+                                                <span key={`${m.id}_p_${i}`} className={`MotifCard__bar ${i < barsOn ? "is-on" : ""}`} />
+                                            ))}
+                                        </div>
+                                        <div className="ConceptCard__foot">
+                                            <span>{refs.length ? refs.join(" ") : tr(locale, "来源: n/a", "source: n/a")}</span>
+                                            <span>{confidencePct}%</span>
+                                        </div>
+                                    </>
+                                ) : null}
 
                                 {isEditing && draft ? (
                                     <div
@@ -578,7 +582,7 @@ export function ConceptPanel(props: {
                                             />
                                         </label>
                                         <label className="FlowInspector__fieldLabel">
-                                            {tr(locale, "状态", "Status")}
+                                            {tr(locale, "状态（用户可控）", "Status (user-controlled)")}
                                             <select
                                                 className="FlowInspector__select"
                                                 value={draft.status}
@@ -588,7 +592,7 @@ export function ConceptPanel(props: {
                                                     )
                                                 }
                                             >
-                                                {MOTIF_STATUS_OPTIONS.map((status) => (
+                                                {USER_MOTIF_STATUS_OPTIONS.map((status) => (
                                                     <option key={`${m.id}_status_${status}`} value={status}>
                                                         {motifStatusLabel(locale, status)}
                                                     </option>

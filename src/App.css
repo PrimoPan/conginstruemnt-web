@@ -283,7 +283,7 @@ body {
   position: absolute;
   top: 88px;
   right: 10px;
-  width: 320px;
+  width: min(360px, calc(100% - 20px));
   max-height: calc(100% - 100px);
   overflow: auto;
   z-index: 8;
@@ -336,7 +336,7 @@ body {
 
 .FlowInspector__fieldGrid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
   gap: 8px;
 }
 
@@ -355,6 +355,8 @@ body {
 
 .FlowInspector__input,
 .FlowInspector__select {
+  width: 100%;
+  min-width: 0;
   height: 30px;
   border-radius: 8px;
   border: 1px solid rgba(15, 23, 42, 0.2);
@@ -791,7 +793,7 @@ body {
   overscroll-behavior: contain;
   scrollbar-width: thin;
   scrollbar-color: rgba(15, 23, 42, 0.22) transparent;
-  scroll-snap-type: y proximity;
+  scroll-snap-type: none;
 }
 
 .ConceptPanel__list::-webkit-scrollbar {
@@ -843,6 +845,15 @@ body {
   box-shadow: 0 8px 22px rgba(15, 23, 42, 0.12);
 }
 
+.ConceptCard.is-editing {
+  cursor: default;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.12);
+}
+
+.ConceptCard.is-editing:hover {
+  transform: none;
+}
+
 .ConceptCard__head {
   display: grid;
   grid-template-columns: 1fr auto;
@@ -874,15 +885,21 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .ConceptCard__iconBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   height: 26px;
   width: 26px;
   border-radius: 10px;
   border: 1px solid rgba(15, 23, 42, 0.15);
   background: #fff;
   padding: 0;
+  font-size: 13px;
   line-height: 1;
   cursor: pointer;
   transition: transform 140ms ease, border-color 140ms ease, background-color 140ms ease;
@@ -1429,7 +1446,17 @@ body {
   margin: 8px 10px 10px;
   position: static;
   width: auto;
-  max-height: 280px;
+  max-height: min(60vh, 540px);
+  overflow: auto;
+  border-top: 1px solid rgba(15, 23, 42, 0.12);
+  padding-top: 12px;
+}
+
+.ConceptPanel__editorInline .MotifCard__pattern {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  line-height: 1.4;
 }
 
 .ConceptEditor__title {

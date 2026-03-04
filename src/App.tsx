@@ -439,7 +439,16 @@ export default function App() {
       );
       if (Array.isArray(out?.contexts)) setContexts(out.contexts);
       setConceptsDirty(false);
-      if (out?.assistantText) {
+      if (out?.conflictGate?.blocked) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: makeId("gcg"),
+            role: "assistant",
+            text: out.conflictGate?.message || tr("检测到冲突 motif，请先确认后再生成建议。", "Conflicting motifs detected. Resolve them before generating advice."),
+          },
+        ]);
+      } else if (out?.assistantText) {
         setMessages((prev) => [...prev, { id: makeId("ga"), role: "assistant", text: out.assistantText || "" }]);
       } else if (out?.adviceError) {
         setMessages((prev) => [
