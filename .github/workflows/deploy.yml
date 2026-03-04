@@ -18,6 +18,11 @@ jobs:
           node-version: 20
           cache: npm
 
+      - name: Pin npm version
+        run: |
+          npm install -g npm@10.8.2
+          npm --version
+
       - name: Install dependencies
         run: |
           if ! npm ci; then

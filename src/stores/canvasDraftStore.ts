@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
+import type { PersistOptions } from "zustand/middleware";
 import type { CDG } from "../core/type";
 import { normalizeGraphClient } from "../core/graphSafe";
 
@@ -20,6 +21,8 @@ export type CanvasDraftStoreState = {
     clearAllDrafts: () => void;
 };
 
+type CanvasDraftPersistedState = Pick<CanvasDraftStoreState, "draftsByConversation">;
+
 export function canvasDraftBucketKey(conversationId: string): string {
     const key = String(conversationId || "").trim();
     return key || DEFAULT_CONVERSATION_BUCKET;
@@ -29,8 +32,16 @@ function normalizeDraftGraph(graph: CDG): CDG {
     return normalizeGraphClient(graph);
 }
 
+const canvasDraftPersistOptions: PersistOptions<CanvasDraftStoreState, CanvasDraftPersistedState> = {
+    name: CANVAS_DRAFT_STORAGE_KEY,
+    storage: createJSONStorage(() => localStorage),
+    partialize: (state): CanvasDraftPersistedState => ({
+        draftsByConversation: state.draftsByConversation,
+    }),
+};
+
 function createCanvasDraftStoreState() {
-    return persist<CanvasDraftStoreState>(
+    return persist<CanvasDraftStoreState, [], [], CanvasDraftPersistedState>(
         (set, get) => ({
             draftsByConversation: {},
 
@@ -57,13 +68,7 @@ function createCanvasDraftStoreState() {
                 set({ draftsByConversation: {} });
             },
         }),
-        {
-            name: CANVAS_DRAFT_STORAGE_KEY,
-            storage: createJSONStorage(() => localStorage),
-            partialize: (state) => ({
-                draftsByConversation: state.draftsByConversation,
-            }),
-        }
+        canvasDraftPersistOptions
     );
 }
 
