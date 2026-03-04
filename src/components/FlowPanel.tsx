@@ -35,6 +35,7 @@ import {
     pickRootGoalId,
 } from "./flow/graphDraftUtils";
 import { makeDragStartSnapshot, persistDraggedNodePositions, pickMovedNodes } from "./flow/dragPersistence";
+import { useCanvasDraftStore } from "../stores/canvasDraftStore";
 
 const nodeTypes = { cdgNode: CdgFlowNode };
 
@@ -169,6 +170,7 @@ export type ManualMotifDraft = {
 };
 
 export function FlowPanel(props: {
+    conversationId: string;
     locale: AppLocale;
     graph: CDG;
     concepts?: ConceptItem[];
@@ -195,6 +197,7 @@ export function FlowPanel(props: {
     onToggleConceptPanel: () => void;
 }) {
     const {
+        conversationId,
         locale,
         graph,
         concepts,
@@ -219,9 +222,18 @@ export function FlowPanel(props: {
     } = props;
     const en = locale === "en-US";
     const tr = (zh: string, enText: string) => (en ? enText : zh);
+    const setConversationDraft = useCanvasDraftStore((state) => state.setConversationDraft);
     const [canvasView, setCanvasView] = useState<"concept" | "motif">("concept");
-    const [draftGraph, setDraftGraph] = useState<CDG>(normalizeGraphClient(graph));
-    const [dirty, setDirty] = useState(false);
+    const [draftGraph, setDraftGraph] = useState<CDG>(() => {
+        const normalized = normalizeGraphClient(graph);
+        const stored = useCanvasDraftStore.getState().getConversationDraft(conversationId);
+        const localDraft = stored?.draftGraph ? normalizeGraphClient(stored.draftGraph) : normalized;
+        return mergeIncomingGraphWithLocalUi(normalized, localDraft);
+    });
+    const [dirty, setDirty] = useState<boolean>(() => {
+        const stored = useCanvasDraftStore.getState().getConversationDraft(conversationId);
+        return !!stored?.dirty;
+    });
     const [selectedNodeId, setSelectedNodeId] = useState<string>("");
     const [selectedEdgeId, setSelectedEdgeId] = useState<string>("");
     const [saveError, setSaveError] = useState("");
@@ -230,7 +242,7 @@ export function FlowPanel(props: {
     const [motifComposerError, setMotifComposerError] = useState("");
     const dragStartRef = useRef<Record<string, { x: number; y: number }>>({});
     const selectionDragNodeIdsRef = useRef<string[]>([]);
-    const draftGraphRef = useRef<CDG>(normalizeGraphClient(graph));
+    const draftGraphRef = useRef<CDG>(draftGraph);
 
     const { nodes, edges, setNodes, setEdges, onNodesChange, onEdgesChange } = useFlowState();
 
@@ -262,19 +274,24 @@ export function FlowPanel(props: {
 
     useEffect(() => {
         const normalized = normalizeGraphClient(graph);
-        const merged = mergeIncomingGraphWithLocalUi(normalized, draftGraphRef.current);
+        if (conversationId && normalized.id && normalized.id !== conversationId) return;
+        const stored = useCanvasDraftStore.getState().getConversationDraft(conversationId);
+        const localDraft = stored?.draftGraph ? normalizeGraphClient(stored.draftGraph) : draftGraphRef.current;
+        const merged = mergeIncomingGraphWithLocalUi(normalized, localDraft);
+        const nextDirty = !!stored?.dirty;
         setDraftGraph(merged);
         draftGraphRef.current = merged;
+        setConversationDraft(conversationId, merged, nextDirty);
         dragStartRef.current = {};
         selectionDragNodeIdsRef.current = [];
-        setDirty(false);
+        setDirty(nextDirty);
         setSelectedNodeId("");
         setSelectedEdgeId("");
         setSaveError("");
         setMotifComposerOpen(false);
         setMotifSentence("");
         setMotifComposerError("");
-    }, [graph]);
+    }, [conversationId, graph, setConversationDraft]);
 
     useEffect(() => {
         draftGraphRef.current = draftGraph;
@@ -306,10 +323,11 @@ export function FlowPanel(props: {
         setDraftGraph((prev) => {
             const next = updater(prev);
             draftGraphRef.current = next;
+            setConversationDraft(conversationId, next, true);
             return next;
         });
         setDirty(true);
-    }, []);
+    }, [conversationId, setConversationDraft]);
 
     const onNodePatch = useCallback(
         (nodeId: string, patch: Partial<CDGNode>) => {
@@ -561,7 +579,8 @@ export function FlowPanel(props: {
         draftGraphRef.current = nextGraph;
         setDraftGraph(nextGraph);
         setDirty(true);
-    }, []);
+        setConversationDraft(conversationId, nextGraph, true);
+    }, [conversationId, setConversationDraft]);
 
     const onNodeDragStop = useCallback(
         (_: any, dragged: any) => {
@@ -606,8 +625,9 @@ export function FlowPanel(props: {
             draftGraphRef.current = nextGraph;
             setDraftGraph(nextGraph);
             setDirty(true);
+            setConversationDraft(conversationId, nextGraph, true);
         },
-        [nodes]
+        [conversationId, nodes, setConversationDraft]
     );
 
     const hasUnsavedChanges = dirty || !!extraDirty;
@@ -615,9 +635,10 @@ export function FlowPanel(props: {
     const saveGraph = useCallback(async () => {
         if (!onSaveGraph || savingGraph || !hasUnsavedChanges) return;
         setSaveError("");
+        const latestDraft = draftGraphRef.current;
         try {
             await Promise.resolve(
-                onSaveGraph(draftGraph, {
+                onSaveGraph(latestDraft, {
                     requestAdvice: true,
                     advicePrompt: en
                         ? "The user manually edited the intent graph. Treat this graph as the latest source of truth and provide executable next-step advice from existing dialogue. Give an action plan first, then ask 1-2 focused follow-up questions."
@@ -625,10 +646,11 @@ export function FlowPanel(props: {
                 })
             );
             setDirty(false);
+            setConversationDraft(conversationId, latestDraft, false);
         } catch (e: any) {
             setSaveError(e?.message || (en ? "Save failed" : "保存失败"));
         }
-    }, [draftGraph, en, hasUnsavedChanges, onSaveGraph, savingGraph]);
+    }, [conversationId, en, hasUnsavedChanges, onSaveGraph, savingGraph, setConversationDraft]);
 
     return (
         <div className="Panel">

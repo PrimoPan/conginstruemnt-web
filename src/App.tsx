@@ -847,6 +847,7 @@ export default function App() {
               </button>
             ) : null}
             <FlowPanel
+                conversationId={cid}
                 locale={locale}
                 graph={graph}
                 concepts={concepts}

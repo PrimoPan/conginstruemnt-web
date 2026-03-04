@@ -378,6 +378,8 @@ export type ConceptMotif = {
     }>;
     novelty: MotifChangeState;
     updatedAt: string;
+    reuseClass?: "reusable" | "context_specific";
+    reuseReason?: string;
 };
 
 export type MotifLinkType = "precedes" | "supports" | "conflicts_with" | "refines";
@@ -475,8 +477,18 @@ export type ContextItem = {
 export type TravelPlanDay = {
     day: number;
     city?: string;
+    dateLabel?: string;
     title: string;
     items: string[];
+};
+
+export type TravelPlanAssistantPlan = {
+    sourceTurnIndex: number;
+    sourceTurnCreatedAt?: string;
+    rawText: string;
+    narrative: string;
+    parser: "day_header" | "date_header" | "mixed" | "fallback";
+    dayPlans: TravelPlanDay[];
 };
 
 export type TravelPlanState = {
@@ -490,7 +502,9 @@ export type TravelPlanState = {
         totalCny?: number;
         spentCny?: number;
         remainingCny?: number;
+        pendingCny?: number;
     };
+    assistantPlan?: TravelPlanAssistantPlan;
     dayPlans: TravelPlanDay[];
     source: {
         turnCount: number;

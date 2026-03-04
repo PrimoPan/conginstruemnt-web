@@ -101,7 +101,11 @@ REACT_APP_API_BASE_URLS=http://127.0.0.1:3001,http://43.138.212.17:3001
 - 点击边后会出现“边类型”下拉，可改为 `enable/constraint/determine/conflicts_with`。
 - 拖拽节点并释放到另一个节点附近，会重挂为其子节点（默认新增 `enable` 边，且自动避免成环）。
 - 节点卡片改为“纯展示”，编辑入口统一在右上 `Inspector`，避免编辑与拖拽冲突。
-- 节点支持整卡拖拽；拖拽后坐标会写入节点 `value.ui.{x,y}`，并作为本地草稿保留，待用户点击“保存并生成建议”统一提交后端。
+- 画布草稿由 `zustand` 管理并持久化到 `localStorage`（key：`ci_canvas_drafts_v1`），按 `conversationId` 分桶隔离：
+  `draftGraph + dirty + updatedAt`。
+- 节点支持整卡拖拽；拖拽后坐标会写入节点 `value.ui.{x,y}` 并写入 zustand 草稿。刷新页面后会恢复本会话草稿坐标。
+- 与服务端图同步时，前端仅合并本地 UI 坐标（`mergeIncomingGraphWithLocalUi`），避免覆盖服务端结构更新。
+- 点击“保存并生成建议”时始终调用后端保存接口回传当前草稿图；保存成功才清除 `dirty`，保存失败保留未保存状态。
 - 布局按 `destination(city)` 与 `duration_city(city)` 家族分组，同层目的地（如米兰/巴塞）并列展示。
 - `status=rejected` 且低重要度的旧槽位节点默认隐藏，减少历史噪声堆积。
 
@@ -153,6 +157,7 @@ SSE 事件：
 10. `components/flow/FlowToolbar.tsx`：工具栏（新增、保存、状态）。
 11. `components/flow/FlowInspector.tsx`：右上编辑面板（节点/边参数、单节点删除与重连）。
 12. `components/flow/graphDraftUtils.ts`：草稿图辅助函数（ID、环检测、删除后重连、位置写回）。
+13. `stores/canvasDraftStore.ts`：画布草稿 zustand store（按会话持久化、dirty 管理）。
 
 ---
 
@@ -190,6 +195,8 @@ conginstrument-web/
    ├─ core/
    │  ├─ type.ts
    │  └─ graphToFlow.tsx
+   ├─ stores/
+   │  └─ canvasDraftStore.ts
    └─ components/
       ├─ TopBar.tsx
       ├─ ChatPanel.tsx
