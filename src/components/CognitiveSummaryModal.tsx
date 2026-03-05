@@ -9,6 +9,8 @@ type SummaryRow = {
     text: { L1: string; L2: string; L3: string };
 };
 
+const LEVELS: Array<"L1" | "L2" | "L3"> = ["L1", "L2", "L3"];
+
 function tr(locale: AppLocale, zh: string, en: string) {
     return locale === "en-US" ? en : zh;
 }
@@ -18,6 +20,10 @@ function clean(input: any, max = 220) {
         .replace(/\s+/g, " ")
         .trim()
         .slice(0, max);
+}
+
+function normalizeLevels(levels: Array<"L1" | "L2" | "L3">): Array<"L1" | "L2" | "L3"> {
+    return LEVELS.filter((lvl) => levels.includes(lvl));
 }
 
 export function CognitiveSummaryModal(props: {
@@ -115,28 +121,43 @@ export function CognitiveSummaryModal(props: {
                                     checked={row.store}
                                     onChange={(e) =>
                                         setRows((prev) =>
-                                            prev.map((x) => (x.motifId === row.motifId ? { ...x, store: e.target.checked } : x))
+                                            prev.map((x) => {
+                                                if (x.motifId !== row.motifId) return x;
+                                                if (!e.target.checked) {
+                                                    return { ...x, store: false, levels: [] };
+                                                }
+                                                const nextLevels = x.levels.length
+                                                    ? normalizeLevels(x.levels)
+                                                    : (["L2"] as Array<"L1" | "L2" | "L3">);
+                                                return { ...x, store: true, levels: nextLevels };
+                                            })
                                         )
                                     }
                                 />
                                 <span>{row.text.L2 || row.text.L1 || row.motifId}</span>
                             </label>
                             <div className="TaskSummaryModal__levels">
-                                {(["L1", "L2", "L3"] as const).map((lvl) => {
+                                {LEVELS.map((lvl) => {
                                     const checked = row.levels.includes(lvl);
                                     return (
                                         <label key={`${row.motifId}_${lvl}`} className="TaskSummaryModal__levelCheck">
                                             <input
                                                 type="checkbox"
                                                 checked={checked}
+                                                disabled={!row.store}
                                                 onChange={(e) =>
                                                     setRows((prev) =>
                                                         prev.map((x) => {
                                                             if (x.motifId !== row.motifId) return x;
+                                                            const base = normalizeLevels(x.levels);
                                                             const levels = e.target.checked
-                                                                ? Array.from(new Set([...x.levels, lvl]))
-                                                                : x.levels.filter((v) => v !== lvl);
-                                                            return { ...x, levels: levels.length ? levels : ["L2"] };
+                                                                ? normalizeLevels([...base, lvl])
+                                                                : base.filter((v) => v !== lvl);
+                                                            return {
+                                                                ...x,
+                                                                levels,
+                                                                store: levels.length > 0 ? x.store : false,
+                                                            };
                                                         })
                                                     )
                                                 }

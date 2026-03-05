@@ -243,6 +243,14 @@ function payloadTaskLifecycle(payload: any): TaskLifecycleState | null {
   };
 }
 
+function cleanUiError(input: any, max = 220): string {
+  return String(input ?? "")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, max);
+}
+
 export default function App() {
   const [username, setUsername] = useState("test");
   const [locale, setLocale] = useState<AppLocale>(() => {
@@ -300,6 +308,18 @@ export default function App() {
   const loggedIn = !!token;
   const en = locale === "en-US";
   const tr = (zh: string, enText: string) => (en ? enText : zh);
+  const userFacingError = (err: any, zhFallback: string, enFallback: string) => {
+    const raw = cleanUiError(err?.message || String(err || ""), 260);
+    if (!raw) return tr(zhFallback, enFallback);
+    const lower = raw.toLowerCase();
+    if (
+      /http\s*(502|503|504)\b/.test(lower) ||
+      /bad gateway|gateway timeout|upstream service unavailable|service unavailable/.test(lower)
+    ) {
+      return tr("服务暂时不可用，请稍后重试。", "Service temporarily unavailable. Please retry later.");
+    }
+    return raw;
+  };
   const historyLoadErrLabel = en ? "Failed to load conversation history" : "加载历史对话失败";
   const autoCarryHints = useMemo(
     () =>
@@ -995,7 +1015,11 @@ export default function App() {
         {
           id: makeId("transfer_decision_err"),
           role: "assistant",
-          text: `${tr("迁移决策失败", "Transfer decision failed")}: ${e?.message || String(e)}`,
+          text: `${tr("迁移决策失败", "Transfer decision failed")}: ${userFacingError(
+            e,
+            "请求失败，请稍后重试。",
+            "Request failed. Please retry later."
+          )}`,
         },
       ]);
     }
@@ -1025,7 +1049,11 @@ export default function App() {
         {
           id: makeId("transfer_feedback_err"),
           role: "assistant",
-          text: `${tr("迁移反馈提交失败", "Transfer feedback failed")}: ${e?.message || String(e)}`,
+          text: `${tr("迁移反馈提交失败", "Transfer feedback failed")}: ${userFacingError(
+            e,
+            "请求失败，请稍后重试。",
+            "Request failed. Please retry later."
+          )}`,
         },
       ]);
     }

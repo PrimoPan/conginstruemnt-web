@@ -322,3 +322,160 @@ test("Mode C reference should be sent as structured manualReferences", async ({ 
   });
 });
 
+test("Cognitive summary should allow clearing L2 without forcing re-check", async ({ page }) => {
+  await page.route("**/api/**", async (route) => {
+    const req = route.request();
+    const url = new URL(req.url());
+    const path = url.pathname;
+    const method = req.method().toUpperCase();
+
+    if (path === "/api/auth/login" && method === "POST") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          userId: "u1",
+          username: "e2e_user",
+          sessionToken: "token_e2e",
+        }),
+      });
+      return;
+    }
+
+    if (path === "/api/conversations" && method === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify([]),
+      });
+      return;
+    }
+
+    if (path === "/api/conversations" && method === "POST") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(makeConversationPayload("active")),
+      });
+      return;
+    }
+
+    if (path === `/api/conversations/${CONVERSATION_ID}` && method === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(makeConversationPayload("active")),
+      });
+      return;
+    }
+
+    if (path === `/api/conversations/${CONVERSATION_ID}/turns` && method === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify([]),
+      });
+      return;
+    }
+
+    await route.fulfill({
+      status: 404,
+      contentType: "application/json",
+      body: JSON.stringify({ error: `unhandled ${method} ${path}` }),
+    });
+  });
+
+  await bootSession(page);
+  await page.getByRole("button", { name: /结束任务|End Task/i }).click();
+  const firstRow = page.locator(".TaskSummaryModal__item").first();
+  const levelChecks = firstRow.locator(".TaskSummaryModal__levelCheck input");
+  const storeCheck = firstRow.locator(".TaskSummaryModal__check input");
+
+  await levelChecks.nth(0).uncheck();
+  await expect(levelChecks.nth(0)).not.toBeChecked();
+  await levelChecks.nth(1).uncheck();
+  await expect(levelChecks.nth(1)).not.toBeChecked();
+  await expect(storeCheck).not.toBeChecked();
+});
+
+test("Transfer decision error should not leak raw HTML payload", async ({ page }) => {
+  await page.route("**/api/**", async (route) => {
+    const req = route.request();
+    const url = new URL(req.url());
+    const path = url.pathname;
+    const method = req.method().toUpperCase();
+
+    if (path === "/api/auth/login" && method === "POST") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          userId: "u1",
+          username: "e2e_user",
+          sessionToken: "token_e2e",
+        }),
+      });
+      return;
+    }
+
+    if (path === "/api/conversations" && method === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify([]),
+      });
+      return;
+    }
+
+    if (path === "/api/conversations" && method === "POST") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(makeConversationPayload("active")),
+      });
+      return;
+    }
+
+    if (path === `/api/conversations/${CONVERSATION_ID}` && method === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(makeConversationPayload("active")),
+      });
+      return;
+    }
+
+    if (path === `/api/conversations/${CONVERSATION_ID}/turns` && method === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify([]),
+      });
+      return;
+    }
+
+    if (path === `/api/conversations/${CONVERSATION_ID}/motif-transfer/decision` && method === "POST") {
+      await route.fulfill({
+        status: 502,
+        contentType: "text/html",
+        body: "<html><head><title>502 Bad Gateway</title></head><body><h1>502 Bad Gateway</h1></body></html>",
+      });
+      return;
+    }
+
+    await route.fulfill({
+      status: 404,
+      contentType: "application/json",
+      body: JSON.stringify({ error: `unhandled ${method} ${path}` }),
+    });
+  });
+
+  await bootSession(page);
+  await page.getByRole("button", { name: /Motif \(/i }).click();
+  await page.getByRole("button", { name: /作为约束|Use as Constraint/i }).first().click();
+
+  const lastBubble = page.locator(".BubbleText").last();
+  await expect(lastBubble).toContainText(/迁移决策失败|Transfer decision failed/i);
+  await expect(lastBubble).toContainText(/服务暂时不可用|temporarily unavailable/i);
+  await expect(lastBubble).not.toContainText(/<html>|<head>|<body>/i);
+});

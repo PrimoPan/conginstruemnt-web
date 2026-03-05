@@ -123,6 +123,63 @@ function isSseLikeResponse(res: Response): boolean {
     return ct.includes("text/event-stream");
 }
 
+function cleanErrorText(input: any, max = 320): string {
+    return String(input ?? "")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, max);
+}
+
+function isHtmlErrorPayload(text: string): boolean {
+    const s = String(text || "").toLowerCase();
+    if (!s) return false;
+    return (
+        s.includes("<!doctype html") ||
+        s.includes("<html") ||
+        s.includes("<head") ||
+        s.includes("<body") ||
+        s.includes("</html>")
+    );
+}
+
+function extractJsonErrorMessage(rawText: string): string {
+    const text = String(rawText || "").trim();
+    if (!text) return "";
+    try {
+        const parsed = JSON.parse(text);
+        if (parsed && typeof parsed === "object") {
+            const msg = cleanErrorText((parsed as any).error || (parsed as any).message, 240);
+            if (msg) return msg;
+        }
+    } catch {
+        // noop
+    }
+    return "";
+}
+
+function formatHttpErrorMessage(res: Response, rawText: string): string {
+    const status = Number(res.status || 0);
+    const statusText = cleanErrorText(res.statusText, 80);
+    const statusLine = `HTTP ${status}${statusText ? ` ${statusText}` : ""}`.trim();
+    const text = String(rawText || "").trim();
+    if (!text) return statusLine || "HTTP request failed";
+
+    const jsonError = extractJsonErrorMessage(text);
+    if (jsonError) return jsonError;
+
+    if (isHtmlErrorPayload(text)) {
+        if (status === 502 || status === 503 || status === 504) {
+            return `${statusLine}: upstream service unavailable`;
+        }
+        return `${statusLine}: unexpected HTML error response`;
+    }
+
+    const oneLine = cleanErrorText(text, 280);
+    if (!oneLine) return statusLine || "HTTP request failed";
+    if (/^http\s+\d+/i.test(oneLine)) return oneLine;
+    return `${statusLine}: ${oneLine}`;
+}
+
 function withAuthHeaders(opts: RequestInit = {}, token?: string): HeadersInit {
     const headers: Record<string, string> = {
         "Content-Type": "application/json",
@@ -189,9 +246,18 @@ async function http<T>(path: string, opts: RequestInit = {}, token?: string): Pr
 
     if (!res.ok) {
         const text = await res.text().catch(() => "");
-        throw new Error(text || `HTTP ${res.status}`);
+        throw new Error(formatHttpErrorMessage(res, text));
     }
-    return (await res.json()) as T;
+    if (!isJsonLikeResponse(res)) {
+        const text = await res.text().catch(() => "");
+        throw new Error(formatHttpErrorMessage(res, text || "unexpected non-json response"));
+    }
+    try {
+        return (await res.json()) as T;
+    } catch {
+        const text = await res.text().catch(() => "");
+        throw new Error(formatHttpErrorMessage(res, text || "malformed json response"));
+    }
 }
 
 /** --------- SSE（POST）流式 turn --------- */
@@ -361,7 +427,7 @@ async function postTurnStream(params: {
 
     if (!res.ok) {
         const text = await res.text().catch(() => "");
-        throw new Error(text || `HTTP ${res.status}`);
+        throw new Error(formatHttpErrorMessage(res, text));
     }
     if (!res.body) throw new Error("No response body (SSE stream not available)");
 
@@ -651,12 +717,12 @@ export const api = {
                 );
                 if (!res.ok) {
                     const text = await res.text().catch(() => "");
-                    throw new Error(text || `HTTP ${res.status}`);
+                    throw new Error(formatHttpErrorMessage(res, text));
                 }
                 const ct = String(res.headers.get("content-type") || "").toLowerCase();
                 if (ct.includes("text/html")) {
                     const text = await res.text().catch(() => "");
-                    throw new Error(text || "Unexpected HTML response when downloading binary file");
+                    throw new Error(formatHttpErrorMessage(res, text || "unexpected html response"));
                 }
                 return res.blob();
             } catch (err: any) {
