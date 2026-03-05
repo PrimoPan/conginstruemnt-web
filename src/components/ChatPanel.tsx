@@ -20,7 +20,8 @@ export function ChatPanel(props: {
     const en = props.locale === "en-US";
     const tr = (zh: string, enText: string) => (en ? enText : zh);
     const [input, setInput] = useState("");
-    const [copyState, setCopyState] = useState<"idle" | "ok" | "err">("idle");
+    const [copiedMessageId, setCopiedMessageId] = useState("");
+    const [copyFailedMessageId, setCopyFailedMessageId] = useState("");
     const bodyRef = useRef<HTMLDivElement | null>(null);
     const lastMessageText = useMemo(
         () => (props.messages.length ? props.messages[props.messages.length - 1].text : ""),
@@ -41,29 +42,33 @@ export function ChatPanel(props: {
         if (!t) return;
         props.onSend(t);
         setInput("");
-        setCopyState("idle");
     };
 
-    async function copyInput() {
-        const t = input.trim();
+    async function copyMessage(msg: Msg) {
+        const t = String(msg.text || "").trim();
         if (!t) return;
         try {
             if (navigator?.clipboard?.writeText) {
-                await navigator.clipboard.writeText(input);
-                setCopyState("ok");
+                await navigator.clipboard.writeText(msg.text);
+                setCopiedMessageId(msg.id);
+                setCopyFailedMessageId("");
                 return;
             }
             throw new Error("Clipboard API not available");
         } catch {
-            setCopyState("err");
+            setCopyFailedMessageId(msg.id);
+            setCopiedMessageId("");
         }
     }
 
     useEffect(() => {
-        if (copyState === "idle") return;
-        const timer = window.setTimeout(() => setCopyState("idle"), 1200);
+        if (!copiedMessageId && !copyFailedMessageId) return;
+        const timer = window.setTimeout(() => {
+            setCopiedMessageId("");
+            setCopyFailedMessageId("");
+        }, 1200);
         return () => window.clearTimeout(timer);
-    }, [copyState]);
+    }, [copiedMessageId, copyFailedMessageId]);
 
     function escapeRegExp(s: string) {
         return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -151,9 +156,23 @@ export function ChatPanel(props: {
                     <div
                         key={m.id}
                         className={m.role === "user" ? "Bubble Bubble--user" : "Bubble Bubble--assistant"}
-                        style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}
                     >
-                        {renderMessageText(m)}
+                        <div className="Bubble__head">
+                            <button
+                                className="BubbleCopyBtn"
+                                type="button"
+                                onClick={() => copyMessage(m)}
+                                disabled={!String(m.text || "").trim()}
+                                title={tr("复制本条消息", "Copy this message")}
+                            >
+                                {copiedMessageId === m.id
+                                    ? tr("已复制", "Copied")
+                                    : copyFailedMessageId === m.id
+                                        ? tr("复制失败", "Copy failed")
+                                        : tr("复制", "Copy")}
+                            </button>
+                        </div>
+                        <div className="BubbleText">{renderMessageText(m)}</div>
                     </div>
                 ))}
 
@@ -190,14 +209,6 @@ export function ChatPanel(props: {
 
                 <button className="Btn" disabled={!canSend || input.trim().length === 0} onClick={send}>
                     {tr("发送", "Send")}
-                </button>
-
-                <button className="Btn" disabled={input.trim().length === 0} onClick={copyInput}>
-                    {copyState === "ok"
-                        ? tr("已复制", "Copied")
-                        : copyState === "err"
-                            ? tr("复制失败", "Copy failed")
-                            : tr("复制", "Copy")}
                 </button>
             </div>
         </div>

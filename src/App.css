@@ -798,6 +798,9 @@ body {
   border-radius: 14px;
   line-height: 1.4;
   white-space: pre-wrap;
+  display: grid;
+  gap: 6px;
+  min-width: 220px;
 }
 
 .Bubble--user {
@@ -811,6 +814,44 @@ body {
   background: #f3f4f6;
   color: #111827;
 }
+
+.Bubble__head {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.BubbleCopyBtn {
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  background: rgba(248, 250, 252, 0.92);
+  color: rgba(30, 41, 59, 0.84);
+  border-radius: 999px;
+  font-size: 11px;
+  padding: 2px 8px;
+  line-height: 1.25;
+  cursor: pointer;
+}
+
+.BubbleCopyBtn:hover {
+  border-color: rgba(59, 130, 246, 0.52);
+  background: rgba(239, 246, 255, 0.92);
+}
+
+.BubbleCopyBtn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.Bubble--user .BubbleCopyBtn {
+  border-color: rgba(148, 163, 184, 0.45);
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(241, 245, 249, 0.95);
+}
+
+.Bubble--user .BubbleCopyBtn:hover {
+  border-color: rgba(147, 197, 253, 0.72);
+  background: rgba(255, 255, 255, 0.2);
+}
+
 .BubbleText {
   white-space: pre-wrap;
   word-break: break-word;
