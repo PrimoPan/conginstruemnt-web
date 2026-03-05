@@ -1,11 +1,18 @@
 // src/components/ChatPanel.tsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import type { NodeEvidenceFocus } from "../core/type";
-import type { AppLocale } from "../core/type";
+import type { AppLocale, MotifTransferState } from "../core/type";
 
 export type Msg = {
     id: string;
     role: "user" | "assistant";
+    text: string;
+};
+
+export type ModeCReferenceItem = {
+    id: string;
+    motifTypeId: string;
+    title: string;
     text: string;
 };
 
@@ -16,6 +23,11 @@ export function ChatPanel(props: {
     busy: boolean;
     onSend: (text: string) => void;
     evidenceFocus?: NodeEvidenceFocus | null;
+    motifTransferState?: MotifTransferState | null;
+    modeCReferences?: ModeCReferenceItem[];
+    onRemoveModeCReference?: (referenceId: string) => void;
+    onFeedbackNotApplicable?: (payload: { messageId: string; text: string }) => void;
+    onMotifNotApplicable?: (candidateId?: string, motifTypeId?: string) => void;
 }) {
     const en = props.locale === "en-US";
     const tr = (zh: string, enText: string) => (en ? enText : zh);
@@ -29,6 +41,14 @@ export function ChatPanel(props: {
     );
 
     const canSend = useMemo(() => !props.disabled && !props.busy, [props.disabled, props.busy]);
+    const injectedMotifs = useMemo(
+        () =>
+            (props.motifTransferState?.activeInjections || []).filter(
+                (x) => x.injection_state === "injected" && Number(x.transfer_confidence || 0) > 0.2
+            ),
+        [props.motifTransferState]
+    );
+    const modeCReferences = props.modeCReferences || [];
 
     // 自动滚动到底部（流式刷字时很关键）
     useEffect(() => {
@@ -201,6 +221,21 @@ export function ChatPanel(props: {
                                         ? tr("复制失败", "Copy failed")
                                         : tr("复制", "Copy")}
                             </button>
+                            {m.role === "assistant" ? (
+                                <button
+                                    className="BubbleCopyBtn"
+                                    type="button"
+                                    onClick={() =>
+                                        props.onFeedbackNotApplicable?.({
+                                            messageId: m.id,
+                                            text: m.text,
+                                        })
+                                    }
+                                    title={tr("这条回复不适用", "This reply is not applicable")}
+                                >
+                                    {tr("反馈不适用", "Not applicable")}
+                                </button>
+                            ) : null}
                         </div>
                         <div className="BubbleText">{renderMessageText(m)}</div>
                     </div>
@@ -214,6 +249,48 @@ export function ChatPanel(props: {
             </div>
 
             <div className="ChatComposer">
+                {modeCReferences.length ? (
+                    <div className="ChatComposer__references">
+                        <div className="ChatComposer__referencesTitle">
+                            {tr("Mode C 手动参考", "Mode C Manual References")}
+                        </div>
+                        <div className="ChatComposer__referencesList">
+                            {modeCReferences.slice(0, 5).map((ref) => (
+                                <span key={ref.id} className="ChatComposer__referenceChip" title={ref.text}>
+                                    <span className="ChatComposer__referenceChipText">{ref.title}</span>
+                                    <button
+                                        type="button"
+                                        className="ChatComposer__referenceChipRemove"
+                                        onClick={() => props.onRemoveModeCReference?.(ref.id)}
+                                        title={tr("移除参考", "Remove reference")}
+                                    >
+                                        x
+                                    </button>
+                                </span>
+                            ))}
+                        </div>
+                    </div>
+                ) : null}
+                {injectedMotifs.length ? (
+                    <div className="ChatComposer__injections">
+                        <div className="ChatComposer__injectionsTitle">
+                            {tr("已注入规则", "Injected Rules")}
+                        </div>
+                        <div className="ChatComposer__injectionsList">
+                            {injectedMotifs.slice(0, 4).map((inj) => (
+                                <button
+                                    key={`${inj.candidate_id}_${inj.motif_type_id}`}
+                                    type="button"
+                                    className="Btn FlowToolbar__btn"
+                                    onClick={() => props.onMotifNotApplicable?.(inj.candidate_id, inj.motif_type_id)}
+                                    title={inj.constraint_text}
+                                >
+                                    {tr("这条不适用", "Rule not applicable")}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                ) : null}
                 <input
                     className="Input Input--grow"
                     value={input}

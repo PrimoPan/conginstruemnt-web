@@ -1,12 +1,14 @@
 import React, { useMemo, useState } from "react";
 import type {
     AppLocale,
+    CognitiveState,
     ConceptItem,
     ConceptMotif,
     ContextItem,
     EdgeType,
     MotifCausalOperator,
     MotifLifecycleStatus,
+    MotifTransferState,
 } from "../core/type";
 
 function clamp01(v: any, fallback = 0.7) {
@@ -104,6 +106,7 @@ function causalOperatorLabel(locale: AppLocale, op?: ConceptMotif["causalOperato
 }
 
 type TabKey = "concept" | "motif";
+type MotifLibraryEntry = CognitiveState["motif_library"][number];
 type MotifEditDraft = {
     title: string;
     description: string;
@@ -156,6 +159,8 @@ export function ConceptPanel(props: {
     locale: AppLocale;
     concepts: ConceptItem[];
     motifs: ConceptMotif[];
+    motifTransferState?: MotifTransferState | null;
+    motifLibrary?: MotifLibraryEntry[];
     contexts?: ContextItem[];
     activeConceptId?: string;
     activeMotifId?: string;
@@ -167,11 +172,63 @@ export function ConceptPanel(props: {
     onEditConceptNode?: (conceptId: string) => void;
     onPatchConcept: (conceptId: string, patch: Partial<ConceptItem>) => void;
     onPatchMotif: (motifId: string, patch: Partial<ConceptMotif>) => void;
+    onTransferDecision?: (params: {
+        candidateId: string;
+        action: "adopt" | "modify" | "ignore";
+        revisedText?: string;
+        note?: string;
+        modeOverride?: "A" | "B" | "C";
+        recommendation?: {
+            motif_type_id: string;
+            motif_type_title: string;
+            dependency?: string;
+            reusable_description?: string;
+            source_task_id?: string;
+            source_conversation_id?: string;
+            status?: "active" | "uncertain" | "deprecated" | "cancelled";
+            reason?: string;
+            match_score?: number;
+            recommended_mode?: "A" | "B" | "C";
+        };
+    }) => void;
+    onTransferFeedback?: (params: {
+        signal: "thumbs_down" | "retry" | "manual_override" | "explicit_not_applicable";
+        signalText?: string;
+        candidateId?: string;
+        motifTypeId?: string;
+    }) => void;
+    onReviseMotifLibrary?: (params: {
+        motifTypeId: string;
+        choice: "overwrite" | "new_version";
+        requestId?: string;
+    }) => void;
+    onModeCReference?: (params: {
+        motifTypeId: string;
+        motifTypeTitle: string;
+        reusableDescription: string;
+        dependency: string;
+        sourceTaskId?: string;
+        sourceConversationId?: string;
+        status: "active" | "uncertain" | "deprecated" | "cancelled";
+        matchScore: number;
+    }) => void;
+    onModeCConstraint?: (params: {
+        motifTypeId: string;
+        motifTypeTitle: string;
+        reusableDescription: string;
+        dependency: string;
+        sourceTaskId?: string;
+        sourceConversationId?: string;
+        status: "active" | "uncertain" | "deprecated" | "cancelled";
+        matchScore: number;
+    }) => void;
 }) {
     const {
         locale,
         concepts,
         motifs,
+        motifTransferState,
+        motifLibrary,
         contexts,
         activeConceptId,
         activeMotifId,
@@ -183,10 +240,17 @@ export function ConceptPanel(props: {
         onEditConceptNode,
         onPatchConcept,
         onPatchMotif,
+        onTransferDecision,
+        onTransferFeedback,
+        onReviseMotifLibrary,
+        onModeCReference,
+        onModeCConstraint,
     } = props;
     const [tab, setTab] = useState<TabKey>("concept");
     const [editingMotifId, setEditingMotifId] = useState("");
     const [editingMotifDraft, setEditingMotifDraft] = useState<MotifEditDraft | null>(null);
+    const [editingCandidateId, setEditingCandidateId] = useState("");
+    const [editingCandidateText, setEditingCandidateText] = useState("");
 
     const conceptById = useMemo(() => new Map((concepts || []).map((c) => [c.id, c])), [concepts]);
     const conceptNoById = useMemo(() => {
@@ -231,6 +295,68 @@ export function ConceptPanel(props: {
         }
         return out;
     }, [contexts]);
+
+    const transferRecommendations = useMemo(
+        () =>
+            (motifTransferState?.recommendations || [])
+                .slice()
+                .sort((a, b) => {
+                    const pa = a.decision_status === "pending" ? 1 : 0;
+                    const pb = b.decision_status === "pending" ? 1 : 0;
+                    return pb - pa || b.match_score - a.match_score || a.candidate_id.localeCompare(b.candidate_id);
+                }),
+        [motifTransferState]
+    );
+    const pendingRecommendations = transferRecommendations.filter((x) => x.decision_status === "pending");
+    const handledRecommendations = transferRecommendations.filter((x) => x.decision_status !== "pending");
+    const pendingRevisionRequests = useMemo(
+        () => (motifTransferState?.revisionRequests || []).filter((x) => x.status === "pending_user_choice"),
+        [motifTransferState]
+    );
+    const injectedCandidateSet = useMemo(
+        () =>
+            new Set(
+                (motifTransferState?.activeInjections || [])
+                    .filter((x) => x.injection_state === "injected")
+                    .map((x) => cleanText(x.candidate_id, 220))
+            ),
+        [motifTransferState]
+    );
+    const modeCLibraryEntries = useMemo(
+        () =>
+            (motifLibrary || [])
+                .map((entry) => {
+                    const versions = Array.isArray(entry?.versions) ? entry.versions : [];
+                    const current =
+                        versions.find((v) => cleanText(v?.version_id, 180) === cleanText(entry?.current_version_id, 180)) ||
+                        versions[versions.length - 1];
+                    const description = cleanText(
+                        current?.reusable_description || entry?.reusable_description || current?.title || entry?.motif_type_title,
+                        240
+                    );
+                    const matchScore = clamp01(entry?.usage_stats?.transfer_confidence, 0.68);
+                    return {
+                        motifTypeId: cleanText(entry?.motif_type_id, 180),
+                        motifTypeTitle: cleanText(entry?.motif_type_title, 180) || cleanText(current?.title, 180),
+                        dependency: cleanText(current?.dependency || entry?.dependency, 40) || "enable",
+                        reusableDescription: description,
+                        sourceTaskId: cleanText(current?.source_task_id, 80) || undefined,
+                        sourceConversationId: cleanText(current?.source_conversation_id, 80) || undefined,
+                        status:
+                            entry?.status === "active" ||
+                            entry?.status === "deprecated" ||
+                            entry?.status === "cancelled" ||
+                            entry?.status === "uncertain"
+                                ? entry.status
+                                : "uncertain",
+                        matchScore,
+                    };
+                })
+                .filter((entry) => entry.motifTypeId && entry.motifTypeTitle && entry.reusableDescription)
+                .sort((a, b) => b.matchScore - a.matchScore || a.motifTypeTitle.localeCompare(b.motifTypeTitle))
+                .slice(0, 8),
+        [motifLibrary]
+    );
 
     const conceptSelectOptions = useMemo(
         () =>
@@ -404,6 +530,241 @@ export function ConceptPanel(props: {
                     <div className="ConceptPanel__empty">{tr(locale, "当前还没有可用 motif。", "No motifs yet.")}</div>
                 ) : null}
 
+                {tab === "motif" && transferRecommendations.length ? (
+                    <div className="TransferSuggestions">
+                        <div className="TransferSuggestions__title">
+                            {tr(locale, "来自上次任务的建议", "Suggested from previous tasks")}
+                        </div>
+                        {pendingRecommendations.slice(0, 4).map((rec) => {
+                            const score = Math.round(Math.max(0, Math.min(1, Number(rec.match_score || 0))) * 100);
+                            const isEditing = editingCandidateId === rec.candidate_id;
+                            const isInjected = injectedCandidateSet.has(cleanText(rec.candidate_id, 220));
+                            return (
+                                <div key={rec.candidate_id} className="TransferSuggestions__item">
+                                    <div className="TransferSuggestions__head">
+                                        <span className="TransferSuggestions__badge">📚 {tr(locale, "已有", "Library")}</span>
+                                        <span className="TransferSuggestions__name">{rec.motif_type_title}</span>
+                                        <span className="TransferSuggestions__meta">{score}% · {rec.recommended_mode}</span>
+                                    </div>
+                                    <div className="TransferSuggestions__desc">{rec.reusable_description || rec.reason}</div>
+                                    {isInjected ? (
+                                        <div className="TransferSuggestions__status">{tr(locale, "已注入", "Injected")}</div>
+                                    ) : null}
+                                    {!isEditing ? (
+                                        <div className="TransferSuggestions__actions">
+                                            <button
+                                                type="button"
+                                                className="Btn FlowToolbar__btn"
+                                                onClick={() =>
+                                                    onTransferDecision?.({
+                                                        candidateId: rec.candidate_id,
+                                                        action: "adopt",
+                                                    })
+                                                }
+                                            >
+                                                {tr(locale, "直接采用", "Adopt")}
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className="Btn FlowToolbar__btn"
+                                                onClick={() => {
+                                                    setEditingCandidateId(rec.candidate_id);
+                                                    setEditingCandidateText(rec.reusable_description || rec.motif_type_title);
+                                                }}
+                                            >
+                                                {tr(locale, "修改后采用", "Modify + Adopt")}
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className="Btn FlowToolbar__btn"
+                                                onClick={() =>
+                                                    onTransferDecision?.({
+                                                        candidateId: rec.candidate_id,
+                                                        action: "ignore",
+                                                    })
+                                                }
+                                            >
+                                                {tr(locale, "不适用", "Ignore")}
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <div className="TransferSuggestions__edit">
+                                            <textarea
+                                                className="FlowInspector__editor"
+                                                value={editingCandidateText}
+                                                onChange={(e) => setEditingCandidateText(e.target.value)}
+                                            />
+                                            <div className="TransferSuggestions__actions">
+                                                <button
+                                                    type="button"
+                                                    className="Btn FlowToolbar__btn"
+                                                    onClick={() => {
+                                                        setEditingCandidateId("");
+                                                        setEditingCandidateText("");
+                                                    }}
+                                                >
+                                                    {tr(locale, "取消", "Cancel")}
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    className="Btn FlowToolbar__btn"
+                                                    onClick={() => {
+                                                        onTransferDecision?.({
+                                                            candidateId: rec.candidate_id,
+                                                            action: "modify",
+                                                            revisedText: editingCandidateText,
+                                                        });
+                                                        setEditingCandidateId("");
+                                                        setEditingCandidateText("");
+                                                    }}
+                                                >
+                                                    {tr(locale, "保存并采用", "Save + Adopt")}
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })}
+                        {handledRecommendations.length ? (
+                            <details className="TransferSuggestions__handled">
+                                <summary>{tr(locale, "已处理建议", "Handled suggestions")}</summary>
+                                <div className="TransferSuggestions__handledList">
+                                    {handledRecommendations.map((rec) => (
+                                        <div key={`${rec.candidate_id}_handled`} className="TransferSuggestions__handledItem">
+                                            <span>{rec.motif_type_title}</span>
+                                            <span>{rec.decision_status}</span>
+                                            {rec.decision_status !== "ignored" ? (
+                                                <button
+                                                    type="button"
+                                                    className="Btn FlowToolbar__btn"
+                                                    onClick={() =>
+                                                        onTransferFeedback?.({
+                                                            signal: "explicit_not_applicable",
+                                                            candidateId: rec.candidate_id,
+                                                            motifTypeId: rec.motif_type_id,
+                                                        })
+                                                    }
+                                                >
+                                                    {tr(locale, "这条不适用", "Not applicable")}
+                                                </button>
+                                            ) : null}
+                                        </div>
+                                    ))}
+                                </div>
+                            </details>
+                        ) : null}
+                        {pendingRevisionRequests.length ? (
+                            <div className="TransferSuggestions__revision">
+                                <div className="TransferSuggestions__title">
+                                    {tr(locale, "信念修订协商", "Belief Revision Negotiation")}
+                                </div>
+                                {pendingRevisionRequests.map((req) => (
+                                    <div key={req.request_id} className="TransferSuggestions__revisionItem">
+                                        <div>{req.detected_text || req.reason}</div>
+                                        <div className="TransferSuggestions__actions">
+                                            <button
+                                                type="button"
+                                                className="Btn FlowToolbar__btn"
+                                                onClick={() =>
+                                                    onReviseMotifLibrary?.({
+                                                        motifTypeId: req.motif_type_id,
+                                                        requestId: req.request_id,
+                                                        choice: "overwrite",
+                                                    })
+                                                }
+                                            >
+                                                {tr(locale, "覆盖原规则", "Overwrite")}
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className="Btn FlowToolbar__btn"
+                                                onClick={() =>
+                                                    onReviseMotifLibrary?.({
+                                                        motifTypeId: req.motif_type_id,
+                                                        requestId: req.request_id,
+                                                        choice: "new_version",
+                                                    })
+                                                }
+                                            >
+                                                {tr(locale, "新建版本", "New Version")}
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : null}
+                    </div>
+                ) : null}
+
+                {tab === "motif" && modeCLibraryEntries.length ? (
+                    <div className="ModeCPanel">
+                        <div className="ModeCPanel__title">
+                            {tr(locale, "Mode C · 手动参考库", "Mode C · Manual Reference Library")}
+                        </div>
+                        <div className="ModeCPanel__hint">
+                            {tr(
+                                locale,
+                                "用户主导选择：作为参考（不自动注入）或作为约束（注入为 C 模式）。",
+                                "User-driven selection: use as reference (no auto-injection) or as constraint (inject in mode C)."
+                            )}
+                        </div>
+                        <div className="ModeCPanel__list">
+                            {modeCLibraryEntries.map((entry) => {
+                                const scorePct = Math.round(entry.matchScore * 100);
+                                return (
+                                    <div key={`modec_${entry.motifTypeId}`} className="ModeCPanel__item">
+                                        <div className="ModeCPanel__head">
+                                            <span className="ModeCPanel__badge">📚 {tr(locale, "已有", "Library")}</span>
+                                            <span className="ModeCPanel__name">{entry.motifTypeTitle}</span>
+                                            <span className="ModeCPanel__meta">{scorePct}% · Mode C</span>
+                                        </div>
+                                        <div className="ModeCPanel__desc">{entry.reusableDescription}</div>
+                                        <div className="ModeCPanel__actions">
+                                            <button
+                                                type="button"
+                                                className="Btn FlowToolbar__btn"
+                                                onClick={() =>
+                                                    onModeCReference?.({
+                                                        motifTypeId: entry.motifTypeId,
+                                                        motifTypeTitle: entry.motifTypeTitle,
+                                                        reusableDescription: entry.reusableDescription,
+                                                        dependency: entry.dependency,
+                                                        sourceTaskId: entry.sourceTaskId,
+                                                        sourceConversationId: entry.sourceConversationId,
+                                                        status: entry.status,
+                                                        matchScore: entry.matchScore,
+                                                    })
+                                                }
+                                            >
+                                                {tr(locale, "作为参考", "Use as Reference")}
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className="Btn FlowToolbar__btn"
+                                                onClick={() =>
+                                                    onModeCConstraint?.({
+                                                        motifTypeId: entry.motifTypeId,
+                                                        motifTypeTitle: entry.motifTypeTitle,
+                                                        reusableDescription: entry.reusableDescription,
+                                                        dependency: entry.dependency,
+                                                        sourceTaskId: entry.sourceTaskId,
+                                                        sourceConversationId: entry.sourceConversationId,
+                                                        status: entry.status,
+                                                        matchScore: entry.matchScore,
+                                                    })
+                                                }
+                                            >
+                                                {tr(locale, "作为约束", "Use as Constraint")}
+                                            </button>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                ) : null}
+
                 {tab === "motif"
                     ? motifList.map((m, motifIdx) => {
                         const active = m.id === activeMotifId;
@@ -426,6 +787,9 @@ export function ConceptPanel(props: {
                         const isEditing = editingMotifId === m.id;
                         const draft = isEditing ? editingMotifDraft : null;
                         const contextLabels = contextTitlesByMotifId.get(m.id) || [];
+                        const changeSource =
+                            cleanText((m as any).change_source, 24) ||
+                            (m.novelty === "new" || m.novelty === "updated" ? m.novelty : "");
                         const contextLabel = contextLabels.length
                             ? contextLabels.join(" / ")
                             : tr(locale, "当前无关联 Context", "No linked context");
@@ -467,6 +831,11 @@ export function ConceptPanel(props: {
                                         <div className="ConceptCard__title">{m.title}</div>
                                         <div className="ConceptCard__kind">
                                             <span className={`MotifStatusBadge status-${m.status}`}>{motifStatusLabel(locale, m.status)}</span>
+                                            {changeSource ? (
+                                                <span className={`MotifStatusBadge status-change-${changeSource}`}>
+                                                    {changeSource}
+                                                </span>
+                                            ) : null}
                                         </div>
                                     </div>
                                     <div className="ConceptCard__actions">

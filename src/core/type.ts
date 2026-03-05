@@ -140,6 +140,80 @@ export type CognitiveStateMotifInstance = {
     rationale?: string;
 };
 
+export type MotifTransferRecommendation = {
+    candidate_id: string;
+    motif_type_id: string;
+    motif_type_title: string;
+    dependency: string;
+    reusable_description: string;
+    status: "active" | "uncertain" | "deprecated" | "cancelled";
+    reason: string;
+    match_score: number;
+    recommended_mode: "A" | "B" | "C";
+    decision_status: "pending" | "adopted" | "modified_pending_confirmation" | "ignored" | "revised";
+    decision_at?: string;
+    source_task_id?: string;
+    source_conversation_id?: string;
+    created_at?: string;
+};
+
+export type MotifTransferState = {
+    recommendations: MotifTransferRecommendation[];
+    decisions: Array<{
+        id: string;
+        candidate_id: string;
+        action: "adopt" | "modify" | "ignore";
+        decision_status: "pending" | "adopted" | "modified_pending_confirmation" | "ignored" | "revised";
+        decided_at: string;
+        revised_text?: string;
+        note?: string;
+    }>;
+    activeInjections: Array<{
+        candidate_id: string;
+        motif_type_id: string;
+        motif_type_title: string;
+        mode: "A" | "B" | "C";
+        injection_state: "injected" | "pending_confirmation" | "disabled";
+        transfer_confidence: number;
+        constraint_text: string;
+        source_task_id?: string;
+        source_conversation_id?: string;
+        adopted_at: string;
+        disabled_reason?: string;
+    }>;
+    feedbackEvents: Array<{
+        event_id: string;
+        candidate_id?: string;
+        motif_type_id?: string;
+        signal: "thumbs_down" | "retry" | "manual_override" | "explicit_not_applicable";
+        signal_text?: string;
+        delta: number;
+        created_at: string;
+    }>;
+    revisionRequests: Array<{
+        request_id: string;
+        candidate_id?: string;
+        motif_type_id: string;
+        reason: string;
+        detected_text: string;
+        detected_at: string;
+        status: "pending_user_choice" | "resolved";
+        options: Array<"overwrite" | "new_version">;
+        suggested_action?: "overwrite" | "new_version";
+    }>;
+    lastEvaluatedAt?: string;
+    lastDecisionAt?: string;
+    lastFeedbackAt?: string;
+};
+
+export type TaskLifecycleState = {
+    status: "active" | "closed";
+    endedAt?: string;
+    endedTaskId?: string;
+    reopenedAt?: string;
+    updatedAt?: string;
+};
+
 export type CognitiveState = {
     current_task_id: string;
     tasks: Array<{
@@ -156,11 +230,16 @@ export type CognitiveState = {
         concepts_from_user: CognitiveStateConcept[];
         motif_instances_current_task: CognitiveStateMotifInstance[];
         motif_transfer_candidates: Array<{
+            candidate_id: string;
             motif_type_id: string;
             motif_type_title: string;
             dependency: string;
             reusable_description: string;
-            status: "uncertain";
+            status: "active" | "uncertain" | "deprecated" | "cancelled";
+            match_score: number;
+            recommended_mode: "A" | "B" | "C";
+            decision_status: "pending" | "adopted" | "modified_pending_confirmation" | "ignored" | "revised";
+            decision_at?: string;
             reason: string;
         }>;
         clarification_questions: string[];
@@ -175,9 +254,36 @@ export type CognitiveState = {
         motif_type_id: string;
         motif_type_title: string;
         dependency: string;
+        abstraction_levels: ("L1" | "L2" | "L3")[];
+        status: "active" | "uncertain" | "deprecated" | "cancelled";
+        current_version_id: string;
+        versions: Array<{
+            version_id: string;
+            version: number;
+            title: string;
+            dependency: string;
+            reusable_description: string;
+            abstraction_levels: {
+                L1?: string;
+                L2?: string;
+                L3?: string;
+            };
+            status: "active" | "uncertain" | "deprecated" | "cancelled";
+            source_task_id?: string;
+            source_conversation_id?: string;
+            created_at: string;
+            updated_at: string;
+        }>;
         reusable_description: string;
         usage_count: number;
         source_task_ids: string[];
+        usage_stats?: {
+            adopted_count: number;
+            ignored_count: number;
+            feedback_negative_count: number;
+            transfer_confidence: number;
+            last_used_at?: string;
+        };
     }>;
 };
 
@@ -245,7 +351,9 @@ export type ConversationDetail = {
     travelPlanState?: TravelPlanState | null;
     taskDetection?: TaskDetection;
     cognitiveState?: CognitiveState;
+    motifTransferState?: MotifTransferState;
     portfolioDocumentState?: PortfolioDocumentState;
+    taskLifecycle?: TaskLifecycleState;
 };
 
 export type ConversationCreateResponse = ConversationDetail;
@@ -270,7 +378,9 @@ export type GraphSaveResponse = {
     travelPlanState?: TravelPlanState | null;
     taskDetection?: TaskDetection;
     cognitiveState?: CognitiveState;
+    motifTransferState?: MotifTransferState;
     portfolioDocumentState?: PortfolioDocumentState;
+    taskLifecycle?: TaskLifecycleState;
     updatedAt: string;
     assistantText?: string;
     adviceError?: string;
@@ -297,7 +407,9 @@ export type ConceptSaveResponse = {
     travelPlanState?: TravelPlanState | null;
     taskDetection?: TaskDetection;
     cognitiveState?: CognitiveState;
+    motifTransferState?: MotifTransferState;
     portfolioDocumentState?: PortfolioDocumentState;
+    taskLifecycle?: TaskLifecycleState;
     updatedAt: string;
 };
 
@@ -335,7 +447,9 @@ export type TurnResponse = {
     travelPlanState?: TravelPlanState | null;
     taskDetection?: TaskDetection;
     cognitiveState?: CognitiveState;
+    motifTransferState?: MotifTransferState;
     portfolioDocumentState?: PortfolioDocumentState;
+    taskLifecycle?: TaskLifecycleState;
     conflictGate?: ConflictGatePayload | null;
 };
 
@@ -470,6 +584,7 @@ export type ConceptMotifType = "pair" | "triad";
 export type MotifInstanceStatus = "active" | "uncertain" | "deprecated" | "cancelled";
 export type MotifLifecycleStatus = MotifInstanceStatus | "disabled";
 export type MotifChangeState = "new" | "updated" | "unchanged";
+export type MotifSilentChangeSource = "new" | "updated" | "transferred" | "unchanged";
 export type MotifCausalOperator =
     | "direct_causation"
     | "mediated_causation"
@@ -544,6 +659,15 @@ export type ConceptMotif = {
     subgraph_verified?: boolean;
     reasoning_eligible?: boolean;
     coverage_skip_reason?: string;
+    transfer_confidence?: number;
+    injection_state?: "injected" | "pending_confirmation" | "disabled";
+    applied_from_task_id?: string;
+    last_extracted_turn?: number;
+    confidence_trace?: Array<{
+        turn: number;
+        confidence: number;
+    }>;
+    change_source?: MotifSilentChangeSource;
 };
 
 export type MotifLinkType = "precedes" | "supports" | "conflicts_with" | "refines";

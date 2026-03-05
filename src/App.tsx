@@ -20,14 +20,17 @@ import type {
   TurnResponse,
   TurnStreamErrorData,
   TravelPlanningBootstrapRequest,
+  MotifTransferState,
+  TaskLifecycleState,
 } from "./core/type";
 import { TopBar } from "./components/TopBar";
-import { ChatPanel, Msg } from "./components/ChatPanel";
+import { ChatPanel, Msg, type ModeCReferenceItem } from "./components/ChatPanel";
 import { FlowPanel, type ManualMotifDraft } from "./components/FlowPanel";
 import { normalizeGraphClient } from "./core/graphSafe";
 import { ConceptPanel } from "./components/ConceptPanel";
 import { PlanStatePanel } from "./components/PlanStatePanel";
 import { ConversationHistoryDrawer } from "./components/ConversationHistoryDrawer";
+import { CognitiveSummaryModal } from "./components/CognitiveSummaryModal";
 import {
   canonicalizeManualSemanticKey,
   findBestConceptForUpsert,
@@ -215,10 +218,29 @@ function payloadPortfolioState(payload: any): PortfolioDocumentState | null {
   return x as PortfolioDocumentState;
 }
 
+function payloadMotifTransferState(payload: any): MotifTransferState | null {
+  const x = payload?.motifTransferState;
+  if (!x || typeof x !== "object") return null;
+  return x as MotifTransferState;
+}
+
 function payloadTravelPlanState(payload: any): TravelPlanState | null {
   const x = payload?.travelPlanState;
   if (!x || typeof x !== "object") return null;
   return x as TravelPlanState;
+}
+
+function payloadTaskLifecycle(payload: any): TaskLifecycleState | null {
+  const x = payload?.taskLifecycle;
+  if (!x || typeof x !== "object") return null;
+  const status = String((x as any)?.status || "").trim().toLowerCase();
+  return {
+    status: status === "closed" ? "closed" : "active",
+    endedAt: compactText((x as any)?.endedAt, 48) || undefined,
+    endedTaskId: compactText((x as any)?.endedTaskId, 120) || undefined,
+    reopenedAt: compactText((x as any)?.reopenedAt, 48) || undefined,
+    updatedAt: compactText((x as any)?.updatedAt, 48) || undefined,
+  };
 }
 
 export default function App() {
@@ -242,7 +264,9 @@ export default function App() {
   const [travelPlanState, setTravelPlanState] = useState<TravelPlanState | null>(null);
   const [taskDetection, setTaskDetection] = useState<TaskDetection | null>(null);
   const [cognitiveState, setCognitiveState] = useState<CognitiveState | null>(null);
+  const [motifTransferState, setMotifTransferState] = useState<MotifTransferState | null>(null);
   const [portfolioDocumentState, setPortfolioDocumentState] = useState<PortfolioDocumentState | null>(null);
+  const [taskLifecycle, setTaskLifecycle] = useState<TaskLifecycleState | null>(null);
   const [conceptsDirty, setConceptsDirty] = useState(false);
   const [activeConceptId, setActiveConceptId] = useState<string>("");
   const [activeMotifId, setActiveMotifId] = useState<string>("");
@@ -267,6 +291,9 @@ export default function App() {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState("");
   const [newTripModalOpen, setNewTripModalOpen] = useState(false);
+  const [summaryModalOpen, setSummaryModalOpen] = useState(false);
+  const [pendingTaskEndAction, setPendingTaskEndAction] = useState<"export" | "new_trip" | "end_task" | null>(null);
+  const [modeCReferences, setModeCReferences] = useState<ModeCReferenceItem[]>([]);
   const [newTripDestination, setNewTripDestination] = useState("");
   const [newTripKeepConsistentText, setNewTripKeepConsistentText] = useState("");
   const [newTripCarryStableProfile, setNewTripCarryStableProfile] = useState(true);
@@ -317,7 +344,9 @@ export default function App() {
         setTravelPlanState(payloadTravelPlanState(conv));
         setTaskDetection(payloadTaskDetection(conv));
         setCognitiveState(payloadCognitiveState(conv));
+        setMotifTransferState(payloadMotifTransferState(conv));
         setPortfolioDocumentState(payloadPortfolioState(conv));
+        setTaskLifecycle(payloadTaskLifecycle(conv));
         setConceptsDirty(false);
         setFlowHasUnsaved(false);
         setActiveConceptId("");
@@ -358,6 +387,10 @@ export default function App() {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [newTripModalOpen]);
+
+  useEffect(() => {
+    setModeCReferences([]);
+  }, [cid]);
 
   const refreshConversationHistory = useCallback(async (opts?: { silent?: boolean }) => {
     if (!token) {
@@ -414,7 +447,9 @@ export default function App() {
     setTravelPlanState(null);
     setTaskDetection(null);
     setCognitiveState(null);
+    setMotifTransferState(null);
     setPortfolioDocumentState(null);
+    setTaskLifecycle(null);
     setConceptsDirty(false);
     setFlowHasUnsaved(false);
     setActiveConceptId("");
@@ -422,6 +457,7 @@ export default function App() {
     setFocusNodeId("");
     setNodeHoverFocus(null);
     setGraphGenerating(false);
+    setModeCReferences([]);
   }
 
   function applyConversationPayload(payload: any) {
@@ -441,7 +477,9 @@ export default function App() {
     setTravelPlanState(payloadTravelPlanState(payload));
     setTaskDetection(payloadTaskDetection(payload));
     setCognitiveState(payloadCognitiveState(payload));
+    setMotifTransferState(payloadMotifTransferState(payload));
     setPortfolioDocumentState(payloadPortfolioState(payload));
+    setTaskLifecycle(payloadTaskLifecycle(payload));
     setConceptsDirty(false);
     setFlowHasUnsaved(false);
   }
@@ -471,13 +509,85 @@ export default function App() {
     }
   }
 
-  function onOpenNewTravelPlanningModal() {
+  function openNewTravelPlanningModalDirect() {
     if (!token) return;
     setHistoryPanelOpen(false);
     setNewTripDestination("");
     setNewTripKeepConsistentText("");
     setNewTripCarryStableProfile(true);
     setNewTripModalOpen(true);
+  }
+
+  function beginTaskEndFlow(next: "export" | "new_trip" | "end_task") {
+    if (!token || !cid) {
+      if (next === "new_trip") openNewTravelPlanningModalDirect();
+      return;
+    }
+    if (next === "end_task" && taskLifecycle?.status === "closed") {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: makeId("task_end_already_closed"),
+          role: "assistant",
+          text: tr(
+            "当前任务已是结束状态。继续发送将自动开启新任务。",
+            "Current task is already closed. Sending a new message will automatically start a new task."
+          ),
+        },
+      ]);
+      return;
+    }
+    const hasMotifs = (motifs || []).length > 0;
+    if (!hasMotifs) {
+      if (next === "export") {
+        onExportPlanDirect();
+      } else if (next === "new_trip") {
+        openNewTravelPlanningModalDirect();
+      } else {
+        void (async () => {
+          if (!token || !cid) return;
+          setBusy(true);
+          try {
+            const out = await api.confirmMotifLibrary(token, cid, [], { closeTask: true });
+            applyConversationPayload(out);
+            setModeCReferences([]);
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: makeId("task_end"),
+                role: "assistant",
+                text: tr(
+                  "当前任务已结束。你可以继续对话，或新建一个任务。",
+                  "Current task is now closed. You can keep chatting or start a new task."
+                ),
+              },
+            ]);
+          } catch (e: any) {
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: makeId("task_end_err"),
+                role: "assistant",
+                text: `${tr("结束任务失败", "End task failed")}: ${e?.message || String(e)}`,
+              },
+            ]);
+          } finally {
+            setBusy(false);
+          }
+        })();
+      }
+      return;
+    }
+    setPendingTaskEndAction(next);
+    setSummaryModalOpen(true);
+  }
+
+  function onOpenNewTravelPlanningModal() {
+    beginTaskEndFlow("new_trip");
+  }
+
+  function onEndTask() {
+    beginTaskEndFlow("end_task");
   }
 
   async function onCreateNewTravelPlanning() {
@@ -561,6 +671,13 @@ export default function App() {
 
     const userText = text.trim();
     if (!userText) return;
+    const manualReferences = modeCReferences.length
+      ? modeCReferences.slice(0, 6).map((x) => ({
+          motif_type_id: x.motifTypeId,
+          title: compactText(x.title, 120),
+          text: compactText(x.text || x.title, 240),
+        }))
+      : undefined;
     setNodeHoverFocus(null);
 
     // 中断上一次
@@ -649,7 +766,9 @@ export default function App() {
           setTravelPlanState(payloadTravelPlanState(out));
           setTaskDetection(payloadTaskDetection(out));
           setCognitiveState(payloadCognitiveState(out));
+          setMotifTransferState(payloadMotifTransferState(out));
           setPortfolioDocumentState(payloadPortfolioState(out));
+          setTaskLifecycle(payloadTaskLifecycle(out));
           refreshConversationHistory({ silent: true });
         },
 
@@ -663,7 +782,7 @@ export default function App() {
               )
           );
         },
-      });
+      }, manualReferences);
     } catch (e: any) {
       if (!ac.signal.aborted) {
         setMessages((prev) =>
@@ -714,7 +833,9 @@ export default function App() {
       setTravelPlanState(payloadTravelPlanState(out));
       setTaskDetection(payloadTaskDetection(out));
       setCognitiveState(payloadCognitiveState(out));
+      setMotifTransferState(payloadMotifTransferState(out));
       setPortfolioDocumentState(payloadPortfolioState(out));
+      setTaskLifecycle(payloadTaskLifecycle(out));
       refreshConversationHistory({ silent: true });
       setConceptsDirty(false);
       setFlowHasUnsaved(false);
@@ -752,7 +873,7 @@ export default function App() {
     }
   }
 
-  async function onExportPlan() {
+  async function onExportPlanDirect() {
     if (!token || !cid) return;
     if (!messages.length) return;
     setExportingPlan(true);
@@ -778,6 +899,212 @@ export default function App() {
     } finally {
       setExportingPlan(false);
     }
+  }
+
+  function onExportPlan() {
+    beginTaskEndFlow("export");
+  }
+
+  async function onSubmitCognitiveSummary(
+    selections: Array<{
+      motif_id?: string;
+      motif_type_id?: string;
+      store?: boolean;
+      abstraction_levels?: Array<"L1" | "L2" | "L3">;
+      abstraction_text?: { L1?: string; L2?: string; L3?: string };
+    }>
+  ) {
+    if (!token || !cid) return;
+    setBusy(true);
+    try {
+      const out = await api.confirmMotifLibrary(token, cid, selections, {
+        closeTask: pendingTaskEndAction === "end_task",
+      });
+      applyConversationPayload(out);
+      setSummaryModalOpen(false);
+      const next = pendingTaskEndAction;
+      setPendingTaskEndAction(null);
+      if (next === "export") {
+        await onExportPlanDirect();
+      } else if (next === "new_trip") {
+        openNewTravelPlanningModalDirect();
+      } else if (next === "end_task") {
+        setModeCReferences([]);
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: makeId("task_end_confirmed"),
+            role: "assistant",
+            text: tr(
+              "已结束当前任务并完成认知摘要存储。你可以继续对话，或新建下一任务。",
+              "Current task has been closed and cognitive summary is stored. You can continue chatting or start the next task."
+            ),
+          },
+        ]);
+      }
+    } catch (e: any) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: makeId("summary_err"),
+          role: "assistant",
+          text: `${tr("认知摘要保存失败", "Cognitive summary save failed")}: ${e?.message || String(e)}`,
+        },
+      ]);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onTransferDecision(params: {
+    candidateId: string;
+    action: "adopt" | "modify" | "ignore";
+    revisedText?: string;
+    note?: string;
+    modeOverride?: "A" | "B" | "C";
+    recommendation?: {
+      motif_type_id: string;
+      motif_type_title: string;
+      dependency?: string;
+      reusable_description?: string;
+      source_task_id?: string;
+      source_conversation_id?: string;
+      status?: "active" | "uncertain" | "deprecated" | "cancelled";
+      reason?: string;
+      match_score?: number;
+      recommended_mode?: "A" | "B" | "C";
+    };
+  }) {
+    if (!token || !cid) return;
+    try {
+      const out = await api.motifTransferDecision(token, cid, {
+        candidate_id: params.candidateId,
+        action: params.action,
+        revised_text: params.revisedText,
+        note: params.note,
+        mode_override: params.modeOverride,
+        recommendation: params.recommendation,
+      });
+      applyConversationPayload(out);
+      if (out.followupQuestion) {
+        setMessages((prev) => [...prev, { id: makeId("transfer_q"), role: "assistant", text: out.followupQuestion || "" }]);
+      }
+    } catch (e: any) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: makeId("transfer_decision_err"),
+          role: "assistant",
+          text: `${tr("迁移决策失败", "Transfer decision failed")}: ${e?.message || String(e)}`,
+        },
+      ]);
+    }
+  }
+
+  async function onTransferFeedback(params: {
+    signal: "thumbs_down" | "retry" | "manual_override" | "explicit_not_applicable";
+    signalText?: string;
+    candidateId?: string;
+    motifTypeId?: string;
+  }) {
+    if (!token || !cid) return;
+    try {
+      const out = await api.motifTransferFeedback(token, cid, {
+        signal: params.signal,
+        signal_text: params.signalText,
+        candidate_id: params.candidateId,
+        motif_type_id: params.motifTypeId,
+      });
+      applyConversationPayload(out);
+      if (out.followupQuestion) {
+        setMessages((prev) => [...prev, { id: makeId("transfer_fb"), role: "assistant", text: out.followupQuestion || "" }]);
+      }
+    } catch (e: any) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: makeId("transfer_feedback_err"),
+          role: "assistant",
+          text: `${tr("迁移反馈提交失败", "Transfer feedback failed")}: ${e?.message || String(e)}`,
+        },
+      ]);
+    }
+  }
+
+  async function onReviseMotifLibrary(params: {
+    motifTypeId: string;
+    choice: "overwrite" | "new_version";
+    requestId?: string;
+  }) {
+    if (!token || !cid) return;
+    try {
+      const out = await api.reviseMotifLibrary(token, cid, {
+        motif_type_id: params.motifTypeId,
+        choice: params.choice,
+        request_id: params.requestId,
+      });
+      applyConversationPayload(out);
+    } catch (e: any) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: makeId("transfer_revise_err"),
+          role: "assistant",
+          text: `${tr("版本修订失败", "Revision failed")}: ${e?.message || String(e)}`,
+        },
+      ]);
+    }
+  }
+
+  function onModeCReference(params: {
+    motifTypeId: string;
+    motifTypeTitle: string;
+    reusableDescription: string;
+  }) {
+    const referenceId = `modec_ref_${params.motifTypeId}`;
+    setModeCReferences((prev) => {
+      const next = prev.filter((x) => x.id !== referenceId);
+      return [
+        ...next,
+        {
+          id: referenceId,
+          motifTypeId: params.motifTypeId,
+          title: compactText(params.motifTypeTitle, 90),
+          text: compactText(params.reusableDescription || params.motifTypeTitle, 220),
+        },
+      ].slice(-6);
+    });
+  }
+
+  async function onModeCConstraint(params: {
+    motifTypeId: string;
+    motifTypeTitle: string;
+    reusableDescription: string;
+    dependency: string;
+    sourceTaskId?: string;
+    sourceConversationId?: string;
+    status: "active" | "uncertain" | "deprecated" | "cancelled";
+    matchScore: number;
+  }) {
+    setModeCReferences((prev) => prev.filter((x) => x.motifTypeId !== params.motifTypeId));
+    await onTransferDecision({
+      candidateId: `modec_${params.motifTypeId}`,
+      action: "adopt",
+      modeOverride: "C",
+      note: "mode_c_manual_constraint",
+      recommendation: {
+        motif_type_id: params.motifTypeId,
+        motif_type_title: params.motifTypeTitle,
+        dependency: params.dependency || "enable",
+        reusable_description: params.reusableDescription,
+        source_task_id: params.sourceTaskId,
+        source_conversation_id: params.sourceConversationId,
+        status: params.status,
+        reason: "manual_mode_c_selection",
+        match_score: params.matchScore,
+        recommended_mode: "C",
+      },
+    });
   }
 
   function onPatchConcept(conceptId: string, patch: Partial<ConceptItem>) {
@@ -1078,6 +1405,7 @@ export default function App() {
             onNewConversation={onNewConversation}
             onNewTravelPlanning={onOpenNewTravelPlanningModal}
             onExportPlan={onExportPlan}
+            onEndTask={onEndTask}
             loggedIn={loggedIn}
             cid={cid}
             graphVersion={graph.version}
@@ -1152,6 +1480,19 @@ export default function App() {
           </div>
         ) : null}
 
+        <CognitiveSummaryModal
+          locale={locale}
+          open={summaryModalOpen}
+          scenario={pendingTaskEndAction}
+          motifs={motifs}
+          busy={busy}
+          onClose={() => {
+            setSummaryModalOpen(false);
+            setPendingTaskEndAction(null);
+          }}
+          onConfirm={onSubmitCognitiveSummary}
+        />
+
         <div className={mainCls}>
           <div className="Left">
             <div className={`LeftStack ${planStateCollapsed ? "LeftStack--planCollapsed" : ""}`}>
@@ -1163,6 +1504,24 @@ export default function App() {
                     busy={busy}
                     onSend={onSend}
                     evidenceFocus={mergedFocus}
+                    motifTransferState={motifTransferState}
+                    modeCReferences={modeCReferences}
+                    onRemoveModeCReference={(referenceId) =>
+                      setModeCReferences((prev) => prev.filter((x) => x.id !== referenceId))
+                    }
+                    onFeedbackNotApplicable={(payload) =>
+                      onTransferFeedback({
+                        signal: "explicit_not_applicable",
+                        signalText: payload.text,
+                      })
+                    }
+                    onMotifNotApplicable={(candidateId, motifTypeId) =>
+                      onTransferFeedback({
+                        signal: "explicit_not_applicable",
+                        candidateId,
+                        motifTypeId,
+                      })
+                    }
                 />
               </div>
               <div className="LeftStack__plan">
@@ -1185,6 +1544,8 @@ export default function App() {
                   locale={locale}
                   concepts={conceptsView}
                   motifs={motifs}
+                  motifTransferState={motifTransferState}
+                  motifLibrary={cognitiveState?.motif_library || []}
                   contexts={contexts}
                   activeConceptId={activeConceptId}
                   activeMotifId={activeMotifId}
@@ -1201,6 +1562,11 @@ export default function App() {
                   onEditConceptNode={onEditConceptNode}
                   onPatchConcept={onPatchConcept}
                   onPatchMotif={onPatchMotif}
+                  onTransferDecision={onTransferDecision}
+                  onTransferFeedback={onTransferFeedback}
+                  onReviseMotifLibrary={onReviseMotifLibrary}
+                  onModeCReference={onModeCReference}
+                  onModeCConstraint={onModeCConstraint}
               />
               <button
                   type="button"

@@ -10,6 +10,7 @@ export function TopBar(props: {
     onNewConversation: () => void;
     onNewTravelPlanning: () => void;
     onExportPlan: () => void;
+    onEndTask: () => void;
     loggedIn: boolean;
     cid: string;
     graphVersion: number;
@@ -67,6 +68,14 @@ export function TopBar(props: {
                     title={tr("从上次经验新建旅行规划", "Start a new trip planning from reusable constraints")}
                 >
                     {tr("新增旅游规划", "New Trip Plan")}
+                </button>
+                <button
+                    className="Btn"
+                    onClick={props.onEndTask}
+                    disabled={!props.loggedIn || !props.cid || props.busy}
+                    title={tr("结束当前任务并确认认知摘要", "End current task and confirm cognitive summary")}
+                >
+                    {tr("结束任务", "End Task")}
                 </button>
                 <div className="Meta">
                     {props.cid ? (

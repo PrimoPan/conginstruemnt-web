@@ -17,7 +17,14 @@ import type {
     TurnStreamPingData,
     TurnStreamErrorData,
     TravelPlanningBootstrapRequest,
+    MotifTransferState,
 } from "../core/type";
+
+type ManualReferencePayload = {
+    motif_type_id?: string;
+    title?: string;
+    text: string;
+};
 
 const API_BASE_STORAGE_KEY = "cg.apiBase";
 const ENV_BASES_RAW =
@@ -197,6 +204,48 @@ export type TurnStreamHandlers = {
     onError?: (err: TurnStreamErrorData) => void;
 };
 
+export type MotifTransferDecisionResponse = TurnResponse & {
+    ok: boolean;
+    decision: {
+        id: string;
+        candidate_id: string;
+        action: "adopt" | "modify" | "ignore";
+        decision_status: "pending" | "adopted" | "modified_pending_confirmation" | "ignored" | "revised";
+        decided_at: string;
+        revised_text?: string;
+        note?: string;
+    };
+    followupQuestion?: string;
+    motifTransferState?: MotifTransferState;
+};
+
+export type MotifTransferFeedbackResponse = TurnResponse & {
+    ok: boolean;
+    event: {
+        event_id: string;
+        candidate_id?: string;
+        motif_type_id?: string;
+        signal: "thumbs_down" | "retry" | "manual_override" | "explicit_not_applicable";
+        signal_text?: string;
+        delta: number;
+        created_at: string;
+    };
+    followupQuestion?: string;
+    motifTransferState?: MotifTransferState;
+};
+
+export type MotifLibraryConfirmResponse = TurnResponse & {
+    ok: boolean;
+    stored_motif_type_ids: string[];
+    motifTransferState?: MotifTransferState;
+};
+
+export type MotifLibraryReviseResponse = TurnResponse & {
+    ok: boolean;
+    revised_entry?: unknown;
+    motifTransferState?: MotifTransferState;
+};
+
 function parseMaybeJson(raw: string): any {
     const s = raw.trim();
     if (!s) return s;
@@ -268,9 +317,10 @@ async function postTurnStream(params: {
     token: string;
     cid: string;
     userText: string;
+    manualReferences?: ManualReferencePayload[];
     handlers: TurnStreamHandlers;
 }) {
-    const { token, cid, userText, handlers } = params;
+    const { token, cid, userText, manualReferences, handlers } = params;
     const bases = resolveApiBases();
     let res: Response | null = null;
     let lastErr: any = null;
@@ -285,7 +335,10 @@ async function postTurnStream(params: {
                     Accept: "text/event-stream",
                     Authorization: `Bearer ${token}`,
                 },
-                body: JSON.stringify({ userText }),
+                body: JSON.stringify({
+                    userText,
+                    manualReferences: Array.isArray(manualReferences) ? manualReferences : undefined,
+                }),
                 signal: handlers.signal,
             });
             if (!attempt.ok && RETRIABLE_STATUS.has(attempt.status) && i < bases.length - 1) {
@@ -445,16 +498,133 @@ export const api = {
         http<TurnItem[]>(`/api/conversations/${cid}/turns?limit=${limit}`, {}, token),
 
     // 非流式（保留）
-    turn: (token: string, cid: string, userText: string) =>
+    turn: (
+        token: string,
+        cid: string,
+        userText: string,
+        manualReferences?: ManualReferencePayload[]
+    ) =>
         http<TurnResponse>(
             `/api/conversations/${cid}/turn`,
-            { method: "POST", body: JSON.stringify({ userText }) },
+            {
+                method: "POST",
+                body: JSON.stringify({
+                    userText,
+                    manualReferences: Array.isArray(manualReferences) ? manualReferences : undefined,
+                }),
+            },
             token
         ),
 
     // ✅ 流式（SSE）
-    turnStream: (token: string, cid: string, userText: string, handlers: TurnStreamHandlers) =>
-        postTurnStream({ token, cid, userText, handlers }),
+    turnStream: (
+        token: string,
+        cid: string,
+        userText: string,
+        handlers: TurnStreamHandlers,
+        manualReferences?: ManualReferencePayload[]
+    ) =>
+        postTurnStream({ token, cid, userText, manualReferences, handlers }),
+
+    motifTransferDecision: (
+        token: string,
+        cid: string,
+        payload: {
+            candidate_id: string;
+            action: "adopt" | "modify" | "ignore";
+            revised_text?: string;
+            note?: string;
+            mode_override?: "A" | "B" | "C";
+            recommendation?: {
+                motif_type_id: string;
+                motif_type_title: string;
+                dependency?: string;
+                reusable_description?: string;
+                source_task_id?: string;
+                source_conversation_id?: string;
+                status?: "active" | "uncertain" | "deprecated" | "cancelled";
+                reason?: string;
+                match_score?: number;
+                recommended_mode?: "A" | "B" | "C";
+            };
+        }
+    ) =>
+        http<MotifTransferDecisionResponse>(
+            `/api/conversations/${cid}/motif-transfer/decision`,
+            {
+                method: "POST",
+                body: JSON.stringify(payload),
+            },
+            token
+        ),
+
+    motifTransferFeedback: (
+        token: string,
+        cid: string,
+        payload: {
+            signal: "thumbs_down" | "retry" | "manual_override" | "explicit_not_applicable";
+            signal_text?: string;
+            candidate_id?: string;
+            motif_type_id?: string;
+        }
+    ) =>
+        http<MotifTransferFeedbackResponse>(
+            `/api/conversations/${cid}/motif-transfer/feedback`,
+            {
+                method: "POST",
+                body: JSON.stringify(payload),
+            },
+            token
+        ),
+
+    confirmMotifLibrary: (
+        token: string,
+        cid: string,
+        selections: Array<{
+            motif_id?: string;
+            motif_type_id?: string;
+            store?: boolean;
+            abstraction_levels?: Array<"L1" | "L2" | "L3">;
+            abstraction_text?: { L1?: string; L2?: string; L3?: string };
+        }>,
+        opts?: {
+            closeTask?: boolean;
+        }
+    ) =>
+        http<MotifLibraryConfirmResponse>(
+            `/api/conversations/${cid}/motif-library/confirm`,
+            {
+                method: "POST",
+                body: JSON.stringify({
+                    selections,
+                    close_task: !!opts?.closeTask,
+                }),
+            },
+            token
+        ),
+
+    reviseMotifLibrary: (
+        token: string,
+        cid: string,
+        payload: {
+            motif_type_id: string;
+            choice: "overwrite" | "new_version";
+            request_id?: string;
+            title?: string;
+            dependency?: string;
+            reusable_description?: string;
+            abstraction_text?: { L1?: string; L2?: string; L3?: string };
+            status?: "active" | "uncertain" | "deprecated" | "cancelled";
+        }
+    ) =>
+        http<MotifLibraryReviseResponse>(
+            `/api/conversations/${cid}/motif-library/revise`,
+            {
+                method: "POST",
+                body: JSON.stringify(payload),
+            },
+            token
+        ),
 
     exportTravelPlanPdf: async (token: string, cid: string) => {
         const basePath = `/api/conversations/${cid}/travel-plan`;

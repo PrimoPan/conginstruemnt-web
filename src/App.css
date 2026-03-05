@@ -792,6 +792,77 @@ body {
   flex-wrap: wrap;
 }
 
+.ChatComposer__injections {
+  width: 100%;
+  display: grid;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+
+.ChatComposer__injectionsTitle {
+  font-size: 11px;
+  color: rgba(15, 23, 42, 0.68);
+  font-weight: 700;
+}
+
+.ChatComposer__injectionsList {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.ChatComposer__references {
+  width: 100%;
+  display: grid;
+  gap: 6px;
+}
+
+.ChatComposer__referencesTitle {
+  font-size: 11px;
+  color: rgba(15, 23, 42, 0.68);
+  font-weight: 700;
+}
+
+.ChatComposer__referencesList {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.ChatComposer__referenceChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  background: rgba(255, 255, 255, 0.96);
+  color: rgba(15, 23, 42, 0.86);
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 11px;
+}
+
+.ChatComposer__referenceChipText {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ChatComposer__referenceChipRemove {
+  border: none;
+  background: transparent;
+  color: rgba(100, 116, 139, 0.95);
+  font-size: 11px;
+  padding: 0;
+  cursor: pointer;
+}
+
+.ChatComposer__referenceChipRemove:hover {
+  color: rgba(185, 28, 28, 0.9);
+}
+
 .Bubble {
   max-width: 82%;
   padding: 10px 12px;
@@ -818,6 +889,8 @@ body {
 .Bubble__head {
   display: flex;
   justify-content: flex-end;
+  gap: 6px;
+  flex-wrap: wrap;
 }
 
 .BubbleCopyBtn {
@@ -1172,6 +1245,210 @@ body {
   padding: 10px;
 }
 
+.TransferSuggestions {
+  border: 1px solid rgba(14, 116, 144, 0.28);
+  background: rgba(236, 254, 255, 0.74);
+  border-radius: 14px;
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.TransferSuggestions__title {
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(21, 94, 117, 0.9);
+}
+
+.TransferSuggestions__item {
+  border: 1px solid rgba(8, 145, 178, 0.26);
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 12px;
+  padding: 8px;
+  display: grid;
+  gap: 6px;
+}
+
+.TransferSuggestions__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.TransferSuggestions__badge {
+  border: 1px solid rgba(8, 145, 178, 0.35);
+  background: rgba(236, 254, 255, 0.88);
+  color: rgba(14, 116, 144, 0.92);
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 7px;
+}
+
+.TransferSuggestions__name {
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(15, 23, 42, 0.9);
+}
+
+.TransferSuggestions__meta {
+  font-size: 11px;
+  color: rgba(15, 23, 42, 0.62);
+}
+
+.TransferSuggestions__desc {
+  font-size: 12px;
+  color: rgba(15, 23, 42, 0.76);
+  line-height: 1.35;
+}
+
+.TransferSuggestions__status {
+  font-size: 11px;
+  color: rgba(22, 101, 52, 0.9);
+  background: rgba(220, 252, 231, 0.9);
+  border: 1px solid rgba(22, 101, 52, 0.25);
+  border-radius: 8px;
+  padding: 2px 6px;
+  width: fit-content;
+}
+
+.TransferSuggestions__actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.TransferSuggestions__edit {
+  display: grid;
+  gap: 6px;
+}
+
+.TransferSuggestions__handled {
+  border-top: 1px dashed rgba(15, 23, 42, 0.2);
+  padding-top: 8px;
+}
+
+.TransferSuggestions__handled summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: rgba(15, 23, 42, 0.68);
+}
+
+.TransferSuggestions__handledList {
+  margin-top: 6px;
+  display: grid;
+  gap: 6px;
+}
+
+.TransferSuggestions__handledItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  color: rgba(15, 23, 42, 0.74);
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  background: rgba(248, 250, 252, 0.8);
+  border-radius: 8px;
+  padding: 6px;
+}
+
+.TransferSuggestions__revision {
+  border-top: 1px dashed rgba(15, 23, 42, 0.2);
+  padding-top: 8px;
+  display: grid;
+  gap: 6px;
+}
+
+.TransferSuggestions__revisionItem {
+  border: 1px solid rgba(191, 219, 254, 0.75);
+  background: rgba(239, 246, 255, 0.9);
+  border-radius: 10px;
+  padding: 8px;
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+  color: rgba(30, 64, 175, 0.92);
+}
+
+.ModeCPanel {
+  border: 1px solid rgba(15, 23, 42, 0.15);
+  background: rgba(248, 250, 252, 0.9);
+  border-radius: 14px;
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.ModeCPanel__title {
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(15, 23, 42, 0.88);
+}
+
+.ModeCPanel__hint {
+  font-size: 11px;
+  color: rgba(15, 23, 42, 0.64);
+  line-height: 1.35;
+}
+
+.ModeCPanel__list {
+  display: grid;
+  gap: 8px;
+}
+
+.ModeCPanel__item {
+  border: 1px solid rgba(148, 163, 184, 0.36);
+  background: rgba(255, 255, 255, 0.92);
+  border-radius: 10px;
+  padding: 8px;
+  display: grid;
+  gap: 6px;
+}
+
+.ModeCPanel__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.ModeCPanel__badge {
+  border: 1px solid rgba(100, 116, 139, 0.35);
+  background: rgba(241, 245, 249, 0.9);
+  color: rgba(30, 41, 59, 0.9);
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 7px;
+}
+
+.ModeCPanel__name {
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(15, 23, 42, 0.9);
+}
+
+.ModeCPanel__meta {
+  font-size: 11px;
+  color: rgba(71, 85, 105, 0.88);
+}
+
+.ModeCPanel__desc {
+  font-size: 12px;
+  color: rgba(30, 41, 59, 0.82);
+  line-height: 1.35;
+}
+
+.ModeCPanel__actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
 .ConceptCard {
   border: 1px solid rgba(15, 23, 42, 0.12);
   border-radius: 18px;
@@ -1352,6 +1629,27 @@ body {
   color: rgba(15, 23, 42, 0.62);
   border-color: rgba(107, 114, 128, 0.28);
   background: rgba(229, 231, 235, 0.85);
+}
+
+.MotifStatusBadge.status-change-new {
+  margin-left: 6px;
+  color: rgba(22, 101, 52, 0.9);
+  border-color: rgba(22, 101, 52, 0.28);
+  background: rgba(220, 252, 231, 0.9);
+}
+
+.MotifStatusBadge.status-change-updated {
+  margin-left: 6px;
+  color: rgba(146, 64, 14, 0.92);
+  border-color: rgba(146, 64, 14, 0.3);
+  background: rgba(254, 243, 199, 0.92);
+}
+
+.MotifStatusBadge.status-change-transferred {
+  margin-left: 6px;
+  color: rgba(7, 89, 133, 0.92);
+  border-color: rgba(7, 89, 133, 0.3);
+  background: rgba(224, 242, 254, 0.92);
 }
 
 .ContextQuestions {
@@ -1880,6 +2178,108 @@ body {
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
   align-items: end;
+}
+
+.TaskSummaryModal {
+  position: fixed;
+  inset: 0;
+  z-index: 1320;
+  display: grid;
+  place-items: center;
+}
+
+.TaskSummaryModal__mask {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.42);
+}
+
+.TaskSummaryModal__panel {
+  position: relative;
+  width: min(760px, calc(100vw - 28px));
+  max-height: calc(100vh - 40px);
+  overflow: auto;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 14px 42px rgba(15, 23, 42, 0.24);
+  padding: 14px;
+  display: grid;
+  gap: 10px;
+}
+
+.TaskSummaryModal__title {
+  font-size: 16px;
+  font-weight: 700;
+  color: rgba(15, 23, 42, 0.92);
+}
+
+.TaskSummaryModal__hint {
+  font-size: 12px;
+  color: rgba(15, 23, 42, 0.66);
+}
+
+.TaskSummaryModal__list {
+  display: grid;
+  gap: 10px;
+}
+
+.TaskSummaryModal__empty {
+  border: 1px dashed rgba(148, 163, 184, 0.5);
+  border-radius: 10px;
+  padding: 10px;
+  font-size: 12px;
+  color: rgba(71, 85, 105, 0.84);
+}
+
+.TaskSummaryModal__item {
+  border: 1px solid rgba(148, 163, 184, 0.34);
+  border-radius: 12px;
+  background: rgba(248, 250, 252, 0.88);
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.TaskSummaryModal__check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.TaskSummaryModal__levels {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.TaskSummaryModal__levelCheck {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.TaskSummaryModal__inputs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+}
+
+.TaskSummaryModal__field {
+  display: grid;
+  gap: 4px;
+  font-size: 11px;
+  color: rgba(15, 23, 42, 0.72);
+}
+
+.TaskSummaryModal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .TripBootstrapModal {
