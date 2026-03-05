@@ -38,6 +38,209 @@ body {
   padding: 0 16px;
 }
 
+.HistoryDrawerToggle {
+  position: fixed;
+  top: 76px;
+  left: 0;
+  z-index: 60;
+  height: 120px;
+  width: 34px;
+  border-radius: 0 12px 12px 0;
+  border: 1px solid rgba(15, 23, 42, 0.22);
+  border-left: none;
+  background: rgba(255, 255, 255, 0.96);
+  color: rgba(15, 23, 42, 0.82);
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.14);
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  letter-spacing: 1px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.HistoryDrawerToggle:hover {
+  border-color: rgba(37, 99, 235, 0.44);
+  color: rgba(30, 64, 175, 0.94);
+}
+
+.HistoryDrawerToggle.is-open {
+  color: rgba(180, 83, 9, 0.92);
+  border-color: rgba(217, 119, 6, 0.46);
+  background: rgba(255, 251, 235, 0.95);
+}
+
+.HistoryDrawer {
+  position: fixed;
+  inset: 56px 0 0 0;
+  z-index: 58;
+  pointer-events: none;
+}
+
+.HistoryDrawer.is-open {
+  pointer-events: auto;
+}
+
+.HistoryDrawer__mask {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.22);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 140ms ease;
+}
+
+.HistoryDrawer.is-open .HistoryDrawer__mask {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.HistoryDrawer__panel {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  width: min(350px, 92vw);
+  border-right: 1px solid var(--border);
+  background: #fff;
+  box-shadow: 8px 0 24px rgba(15, 23, 42, 0.18);
+  transform: translateX(calc(-100% - 14px));
+  transition: transform 180ms ease;
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+}
+
+.HistoryDrawer.is-open .HistoryDrawer__panel {
+  transform: translateX(0);
+}
+
+.HistoryDrawer__head {
+  border-bottom: 1px solid var(--border);
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.HistoryDrawer__title {
+  font-size: 14px;
+  font-weight: 700;
+  color: rgba(15, 23, 42, 0.9);
+}
+
+.HistoryDrawer__actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.HistoryDrawer__error {
+  margin: 10px 12px 0;
+  border: 1px solid rgba(185, 28, 28, 0.26);
+  background: rgba(254, 242, 242, 0.92);
+  color: rgba(153, 27, 27, 0.92);
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.HistoryDrawer__search {
+  padding: 10px 12px 0;
+}
+
+.HistoryDrawer__searchInput {
+  width: 100%;
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.44);
+  background: rgba(255, 255, 255, 0.98);
+  color: rgba(15, 23, 42, 0.9);
+  font-size: 12px;
+  padding: 0 10px;
+  box-sizing: border-box;
+  outline: none;
+}
+
+.HistoryDrawer__searchInput:focus {
+  border-color: rgba(59, 130, 246, 0.54);
+  box-shadow: 0 0 0 2px rgba(191, 219, 254, 0.55);
+}
+
+.HistoryDrawer__list {
+  min-height: 0;
+  overflow: auto;
+  padding: 10px 12px 14px;
+  display: grid;
+  align-content: start;
+  gap: 10px;
+}
+
+.HistoryDrawer__group {
+  display: grid;
+  gap: 6px;
+}
+
+.HistoryDrawer__groupTitle {
+  font-size: 11px;
+  font-weight: 700;
+  color: rgba(51, 65, 85, 0.86);
+  letter-spacing: 0.2px;
+}
+
+.HistoryDrawer__groupList {
+  display: grid;
+  gap: 8px;
+}
+
+.HistoryDrawer__empty {
+  border: 1px dashed rgba(148, 163, 184, 0.56);
+  border-radius: 10px;
+  padding: 12px;
+  font-size: 12px;
+  color: rgba(71, 85, 105, 0.84);
+  background: rgba(248, 250, 252, 0.75);
+}
+
+.HistoryDrawer__item {
+  width: 100%;
+  text-align: left;
+  border: 1px solid rgba(148, 163, 184, 0.34);
+  border-radius: 12px;
+  background: rgba(248, 250, 252, 0.9);
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.HistoryDrawer__item:hover {
+  border-color: rgba(59, 130, 246, 0.48);
+  background: rgba(239, 246, 255, 0.92);
+}
+
+.HistoryDrawer__item.is-active {
+  border-color: rgba(37, 99, 235, 0.54);
+  background: rgba(219, 234, 254, 0.78);
+}
+
+.HistoryDrawer__itemTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(15, 23, 42, 0.9);
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.HistoryDrawer__itemMeta {
+  font-size: 11px;
+  color: rgba(71, 85, 105, 0.86);
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 .TopBar__left {
   display: flex;
   align-items: baseline;
@@ -113,6 +316,9 @@ body {
 }
 
 .LeftStack.LeftStack--planCollapsed .LeftStack__plan {
+  height: auto;
+  min-height: auto;
+  flex: 0 0 auto;
   overflow: visible;
 }
 
@@ -121,7 +327,15 @@ body {
 }
 
 .LeftStack.LeftStack--planCollapsed .PlanStatePanel {
+  flex: 0 0 auto;
   height: auto;
+  max-height: max-content;
+}
+
+.LeftStack.LeftStack--planCollapsed .LeftStack__plan .Panel {
+  flex: 0 0 auto;
+  height: auto;
+  min-height: auto;
 }
 
 .PlanStatePanel__head {
@@ -574,6 +788,8 @@ body {
   gap: 8px;
   padding: 12px;
   border-top: 1px solid var(--border);
+  align-items: center;
+  flex-wrap: wrap;
 }
 
 .Bubble {

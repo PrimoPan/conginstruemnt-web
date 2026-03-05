@@ -784,15 +784,9 @@ export function ConceptPanel(props: {
                                                     if (draft.status !== m.status) {
                                                         patch.status = draft.status;
                                                         patch.statusReason = `user_status_${draft.status}`;
-                                                        if (draft.status === "cancelled") {
-                                                            patch.resolved = true;
-                                                            patch.resolvedBy = "user";
-                                                            patch.resolvedAt = now;
-                                                        } else if (m.status === "cancelled" || m.status === "disabled") {
-                                                            patch.resolved = false;
-                                                            patch.resolvedBy = undefined;
-                                                            patch.resolvedAt = undefined;
-                                                        }
+                                                        patch.resolved = true;
+                                                        patch.resolvedBy = "user";
+                                                        patch.resolvedAt = now;
                                                     }
 
                                                     onPatchMotif(m.id, patch);

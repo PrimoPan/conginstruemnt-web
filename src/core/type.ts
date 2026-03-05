@@ -209,6 +209,10 @@ export type MotifInvariantReport = {
     uncoveredCausalEdges: number;
     repairedMotifCount: number;
     componentCount: number;
+    excludedNonReasoningEdges?: number;
+    excludedByReason?: Record<string, number>;
+    llmValidatedEdges?: number;
+    llmRejectedEdges?: number;
 };
 
 export type ConversationDetail = {
@@ -530,6 +534,8 @@ export type ConceptMotif = {
     rationale?: string;
     coverage_origin?: "native" | "edge_repair";
     subgraph_verified?: boolean;
+    reasoning_eligible?: boolean;
+    coverage_skip_reason?: string;
 };
 
 export type MotifLinkType = "precedes" | "supports" | "conflicts_with" | "refines";

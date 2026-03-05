@@ -20,6 +20,7 @@ export function ChatPanel(props: {
     const en = props.locale === "en-US";
     const tr = (zh: string, enText: string) => (en ? enText : zh);
     const [input, setInput] = useState("");
+    const [copyState, setCopyState] = useState<"idle" | "ok" | "err">("idle");
     const bodyRef = useRef<HTMLDivElement | null>(null);
     const lastMessageText = useMemo(
         () => (props.messages.length ? props.messages[props.messages.length - 1].text : ""),
@@ -40,7 +41,29 @@ export function ChatPanel(props: {
         if (!t) return;
         props.onSend(t);
         setInput("");
+        setCopyState("idle");
     };
+
+    async function copyInput() {
+        const t = input.trim();
+        if (!t) return;
+        try {
+            if (navigator?.clipboard?.writeText) {
+                await navigator.clipboard.writeText(input);
+                setCopyState("ok");
+                return;
+            }
+            throw new Error("Clipboard API not available");
+        } catch {
+            setCopyState("err");
+        }
+    }
+
+    useEffect(() => {
+        if (copyState === "idle") return;
+        const timer = window.setTimeout(() => setCopyState("idle"), 1200);
+        return () => window.clearTimeout(timer);
+    }, [copyState]);
 
     function escapeRegExp(s: string) {
         return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -167,6 +190,14 @@ export function ChatPanel(props: {
 
                 <button className="Btn" disabled={!canSend || input.trim().length === 0} onClick={send}>
                     {tr("发送", "Send")}
+                </button>
+
+                <button className="Btn" disabled={input.trim().length === 0} onClick={copyInput}>
+                    {copyState === "ok"
+                        ? tr("已复制", "Copied")
+                        : copyState === "err"
+                            ? tr("复制失败", "Copy failed")
+                            : tr("复制", "Copy")}
                 </button>
             </div>
         </div>

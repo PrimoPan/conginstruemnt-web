@@ -1,5 +1,5 @@
 // src/App.tsx
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 
 import { api } from "./api/client";
@@ -9,6 +9,7 @@ import type {
   CognitiveState,
   ConceptItem,
   ConceptMotif,
+  ConversationSummary,
   PortfolioDocumentState,
   MotifLink,
   MotifReasoningView,
@@ -25,6 +26,7 @@ import { FlowPanel, type ManualMotifDraft } from "./components/FlowPanel";
 import { normalizeGraphClient } from "./core/graphSafe";
 import { ConceptPanel } from "./components/ConceptPanel";
 import { PlanStatePanel } from "./components/PlanStatePanel";
+import { ConversationHistoryDrawer } from "./components/ConversationHistoryDrawer";
 import {
   canonicalizeManualSemanticKey,
   findBestConceptForUpsert,
@@ -244,9 +246,14 @@ export default function App() {
     return raw === "1";
   });
   const [flowHasUnsaved, setFlowHasUnsaved] = useState(false);
+  const [historyPanelOpen, setHistoryPanelOpen] = useState(false);
+  const [conversationHistory, setConversationHistory] = useState<ConversationSummary[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState("");
   const loggedIn = !!token;
   const en = locale === "en-US";
   const tr = (zh: string, enText: string) => (en ? enText : zh);
+  const historyLoadErrLabel = en ? "Failed to load conversation history" : "加载历史对话失败";
 
   // 中断上一次流（避免串台）
   const abortRef = useRef<AbortController | null>(null);
@@ -303,6 +310,44 @@ export default function App() {
       }
     })();
   }, [token, cid]);
+
+  useEffect(() => {
+    if (!historyPanelOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setHistoryPanelOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [historyPanelOpen]);
+
+  const refreshConversationHistory = useCallback(async (opts?: { silent?: boolean }) => {
+    if (!token) {
+      setConversationHistory([]);
+      setHistoryError("");
+      setHistoryLoading(false);
+      return;
+    }
+    if (!opts?.silent) setHistoryLoading(true);
+    setHistoryError("");
+    try {
+      const list = await api.listConversations(token);
+      setConversationHistory(Array.isArray(list) ? list : []);
+    } catch (e: any) {
+      setHistoryError(`${historyLoadErrLabel}: ${e?.message || String(e)}`);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, [token, historyLoadErrLabel]);
+
+  useEffect(() => {
+    if (!token) {
+      setConversationHistory([]);
+      setHistoryError("");
+      setHistoryPanelOpen(false);
+      return;
+    }
+    refreshConversationHistory({ silent: true });
+  }, [token, refreshConversationHistory]);
 
   async function onLogin() {
     const u = username.trim();
@@ -369,9 +414,52 @@ export default function App() {
       setPortfolioDocumentState(payloadPortfolioState(r));
       setConceptsDirty(false);
       setFlowHasUnsaved(false);
+      setHistoryPanelOpen(false);
+      refreshConversationHistory({ silent: true });
     } finally {
       setBusy(false);
     }
+  }
+
+  async function onSelectConversation(nextConversationId: string) {
+    if (!token || !nextConversationId) return;
+    if (nextConversationId === cid) {
+      setHistoryPanelOpen(false);
+      return;
+    }
+
+    const hasUnsavedChanges = flowHasUnsaved || conceptsDirty;
+    if (hasUnsavedChanges && cid) {
+      try {
+        await onSaveGraph(
+          draftGraphPreview?.nodes?.length ? draftGraphPreview : graph,
+          {
+            requestAdvice: false,
+            emitVirtualStructureMessage: false,
+            saveReason: "auto_before_turn",
+          }
+        );
+      } catch (e: any) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: makeId("switch_autosave_err"),
+            role: "assistant",
+            text: `${tr(
+              "切换历史会话前自动保存失败，已阻止切换",
+              "Auto-save before switching chat failed; switching is blocked"
+            )}: ${e?.message || String(e)}`,
+          },
+        ]);
+        return;
+      }
+    }
+
+    abortRef.current?.abort();
+    abortRef.current = null;
+    localStorage.setItem("ci_cid", nextConversationId);
+    setCid(nextConversationId);
+    setHistoryPanelOpen(false);
   }
 
   async function onSend(text: string) {
@@ -391,7 +479,7 @@ export default function App() {
             (draftGraphPreview?.nodes?.length ? draftGraphPreview : graph),
             {
               requestAdvice: false,
-              emitVirtualStructureMessage: true,
+              emitVirtualStructureMessage: false,
               saveReason: "auto_before_turn",
             }
         );
@@ -468,6 +556,7 @@ export default function App() {
           setTaskDetection(payloadTaskDetection(out));
           setCognitiveState(payloadCognitiveState(out));
           setPortfolioDocumentState(payloadPortfolioState(out));
+          refreshConversationHistory({ silent: true });
         },
 
         onError: (err: TurnStreamErrorData) => {
@@ -532,9 +621,12 @@ export default function App() {
       setTaskDetection(payloadTaskDetection(out));
       setCognitiveState(payloadCognitiveState(out));
       setPortfolioDocumentState(payloadPortfolioState(out));
+      refreshConversationHistory({ silent: true });
       setConceptsDirty(false);
       setFlowHasUnsaved(false);
-      if (opts?.emitVirtualStructureMessage) {
+      const emitVirtualStructureMessage =
+        opts?.saveReason === "auto_before_turn" ? false : !!opts?.emitVirtualStructureMessage;
+      if (emitVirtualStructureMessage) {
         setMessages((prev) => [
           ...prev,
           { id: makeId("virtual_save"), role: "user", text: "已更改coginstrument结构" },
@@ -604,7 +696,6 @@ export default function App() {
 
   function onPatchMotif(motifId: string, patch: Partial<ConceptMotif>) {
     const prevMotifs = motifs || [];
-    const prevMotif = prevMotifs.find((m) => m.id === motifId);
     const nextMotifs = prevMotifs.map((m) =>
         m.id === motifId ? { ...m, ...patch, updatedAt: new Date().toISOString() } : m
     );
@@ -619,44 +710,6 @@ export default function App() {
       Object.prototype.hasOwnProperty.call(patch, "causalOperator");
     if (hasStructureMutation) {
       setMotifReasoningView(emptyMotifReasoningView);
-    }
-
-    const nextStatus = String((patch as any)?.status || "").trim().toLowerCase();
-    if (nextStatus) {
-      const prevStatus = String(prevMotif?.status || "").trim().toLowerCase();
-      const nextIsPaused = nextStatus === "cancelled" || nextStatus === "disabled";
-      const prevIsPaused = prevStatus === "cancelled" || prevStatus === "disabled";
-      const nextMotif = nextMotifs.find((m) => m.id === motifId);
-      const linkedConceptIds = new Set<string>((nextMotif?.conceptIds || prevMotif?.conceptIds || []).filter(Boolean));
-
-      if (linkedConceptIds.size) {
-        setConcepts((prevConcepts) => {
-          const now = new Date().toISOString();
-          return (prevConcepts || []).map((c) => {
-            if (!linkedConceptIds.has(c.id)) return c;
-
-            // 用户取消 motif：关联 concept 一并暂停。
-            if (nextIsPaused) {
-              if (c.paused) return c;
-              return { ...c, paused: true, updatedAt: now };
-            }
-
-            // motif 从取消态恢复时：仅在没有其他取消态 motif 依赖该 concept 时自动恢复。
-            if (prevIsPaused && !nextIsPaused) {
-              const blockedByOtherDisabledMotif = nextMotifs.some(
-                  (m) =>
-                      m.id !== motifId &&
-                      (m.status === "cancelled" || m.status === "disabled") &&
-                      (m.conceptIds || []).includes(c.id)
-              );
-              if (blockedByOtherDisabledMotif || !c.paused) return c;
-              return { ...c, paused: false, updatedAt: now };
-            }
-
-            return c;
-          });
-        });
-      }
     }
 
     setConceptsDirty(true);
@@ -894,6 +947,30 @@ export default function App() {
 
   return (
       <div className="App">
+        <button
+          type="button"
+          className={`HistoryDrawerToggle ${historyPanelOpen ? "is-open" : ""}`}
+          title={tr("切换历史会话面板", "Toggle conversation history")}
+          onClick={() => {
+            const next = !historyPanelOpen;
+            setHistoryPanelOpen(next);
+            if (next) refreshConversationHistory({ silent: true });
+          }}
+        >
+          {historyPanelOpen ? tr("收起对话", "Hide Chats") : tr("历史对话", "Chats")}
+        </button>
+        <ConversationHistoryDrawer
+          locale={locale}
+          open={historyPanelOpen}
+          loading={historyLoading}
+          errorText={historyError}
+          items={conversationHistory}
+          activeConversationId={cid}
+          onClose={() => setHistoryPanelOpen(false)}
+          onRefresh={() => refreshConversationHistory()}
+          onSelectConversation={onSelectConversation}
+          onNewConversation={onNewConversation}
+        />
         <TopBar
             locale={locale}
             onLocaleChange={(next) => {

@@ -1,4 +1,4 @@
-import React, { memo, useEffect, useMemo, useState } from "react";
+import React, { memo, useEffect, useMemo, useRef, useState } from "react";
 import {
     Background,
     Controls,
@@ -371,6 +371,47 @@ type ComponentPlacement = {
     signature: string;
     score: number;
 };
+
+function stabilizeNodePositions(params: {
+    nodes: Node<MotifFlowData>[];
+    cache: Map<string, Point>;
+}): Node<MotifFlowData>[] {
+    const occupied = new Set<string>();
+    const makeGridKey = (p: Point) => `${Math.round(p.x / 24)}:${Math.round(p.y / 24)}`;
+    const placeWithoutCollision = (raw: Point): Point => {
+        let p = { ...raw };
+        let guard = 0;
+        while (occupied.has(makeGridKey(p)) && guard < 50) {
+            const row = Math.floor(guard / 5);
+            const col = guard % 5;
+            p = { x: raw.x + col * 28, y: raw.y + row * 22 };
+            guard += 1;
+        }
+        occupied.add(makeGridKey(p));
+        return p;
+    };
+
+    const sorted = params.nodes
+        .slice()
+        .sort(
+            (a, b) =>
+                a.position.x - b.position.x ||
+                a.position.y - b.position.y ||
+                String(a.data?.motifId || "").localeCompare(String(b.data?.motifId || ""))
+        );
+
+    return sorted.map((node) => {
+        const motifId = cleanText((node.data as any)?.motifId, 120);
+        const cached = motifId ? params.cache.get(motifId) : undefined;
+        const candidate = cached || node.position;
+        const stable = placeWithoutCollision(candidate);
+        if (motifId) params.cache.set(motifId, stable);
+        return {
+            ...node,
+            position: stable,
+        };
+    });
+}
 
 function sortedUniqNodeIds(rawNodes: MotifReasoningNode[]): string[] {
     return Array.from(new Set((rawNodes || []).map((n) => n.id))).sort((a, b) => a.localeCompare(b));
@@ -837,6 +878,7 @@ export function MotifReasoningCanvas(props: {
 }) {
     const en = props.locale === "en-US";
     const [stepsCollapsed, setStepsCollapsed] = useState(false);
+    const positionCacheRef = useRef<Map<string, Point>>(new Map());
     const conceptById = useMemo(
         () => new Map((props.concepts || []).map((c) => [c.id, c])),
         [props.concepts]
@@ -858,7 +900,7 @@ export function MotifReasoningCanvas(props: {
         });
     }, [props.reasoningView, props.motifs, props.motifLinks, props.concepts, props.locale]);
 
-    const { nodes, edges, steps } = useMemo(
+    const { nodes: layoutNodes, edges, steps } = useMemo(
         () => layoutReasoningGraph(resolvedView, props.locale, conceptById, conceptNoById),
         [resolvedView, props.locale, conceptById, conceptNoById]
     );
@@ -872,16 +914,19 @@ export function MotifReasoningCanvas(props: {
     );
     const renderedNodes = useMemo(
         () =>
-            nodes.map((n) => ({
+            stabilizeNodePositions({
+                nodes: layoutNodes,
+                cache: positionCacheRef.current,
+            }).map((n) => ({
                 ...n,
                 selected: !!props.activeMotifId && n.data.motifId === props.activeMotifId,
             })),
-        [nodes, props.activeMotifId]
+        [layoutNodes, props.activeMotifId]
     );
 
     return (
         <div className="MotifReasoningCanvas">
-            {!nodes.length ? (
+            {!renderedNodes.length ? (
                 <div className="MotifReasoningCanvas__empty">
                     {en
                         ? "No motif reasoning structure yet. Continue the conversation to generate one."
