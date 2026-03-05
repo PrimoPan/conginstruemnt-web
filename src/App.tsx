@@ -88,12 +88,19 @@ function uniqStrings(arr: string[], max = 40): string[] {
   return out;
 }
 
-function isHealthOrReligionConcept(c: ConceptItem): boolean {
+function isStableCarryHintConcept(c: ConceptItem): boolean {
   const semantic = String(c?.semanticKey || "").toLowerCase();
   if (semantic.startsWith("slot:constraint:limiting:health")) return true;
   if (semantic.startsWith("slot:constraint:limiting:religion")) return true;
+  if (semantic.startsWith("slot:constraint:limiting:language")) return true;
+  if (semantic.startsWith("slot:constraint:limiting:mobility")) return true;
+  if (semantic.startsWith("slot:constraint:limiting:diet")) return true;
+  if (semantic.startsWith("slot:constraint:limiting:safety")) return true;
+  if (semantic === "slot:people" || semantic === "slot:lodging") return true;
   const text = `${c?.title || ""} ${c?.description || ""}`.toLowerCase();
-  return /冠心病|心脏|健康|医疗|health|cardiac|medical|宗教|信仰|礼拜|religion|faith|prayer|halal|kosher/i.test(text);
+  return /冠心病|心脏|健康|医疗|health|cardiac|medical|宗教|信仰|礼拜|religion|faith|prayer|halal|kosher|语言|language|无障碍|mobility|低盐|低脂|diet|安全|safety|同行|family|traveler|住宿|lodging/i.test(
+    text
+  );
 }
 
 function stableConceptIdFromManual(semanticKey: string, kind: ConceptItem["kind"], polarity = "positive", scope = "global") {
@@ -262,7 +269,7 @@ export default function App() {
   const [newTripModalOpen, setNewTripModalOpen] = useState(false);
   const [newTripDestination, setNewTripDestination] = useState("");
   const [newTripKeepConsistentText, setNewTripKeepConsistentText] = useState("");
-  const [newTripCarryHealthReligion, setNewTripCarryHealthReligion] = useState(true);
+  const [newTripCarryStableProfile, setNewTripCarryStableProfile] = useState(true);
   const loggedIn = !!token;
   const en = locale === "en-US";
   const tr = (zh: string, enText: string) => (en ? enText : zh);
@@ -271,7 +278,7 @@ export default function App() {
     () =>
       uniqStrings(
         (concepts || [])
-          .filter((c) => isHealthOrReligionConcept(c))
+          .filter((c) => isStableCarryHintConcept(c))
           .map((c) => compactText(c.title, 80)),
         6
       ),
@@ -469,7 +476,7 @@ export default function App() {
     setHistoryPanelOpen(false);
     setNewTripDestination("");
     setNewTripKeepConsistentText("");
-    setNewTripCarryHealthReligion(true);
+    setNewTripCarryStableProfile(true);
     setNewTripModalOpen(true);
   }
 
@@ -485,7 +492,8 @@ export default function App() {
       sourceConversationId: cid || undefined,
       destination,
       keepConsistentText: newTripKeepConsistentText.trim() || undefined,
-      carryHealthReligion: newTripCarryHealthReligion,
+      carryHealthReligion: newTripCarryStableProfile,
+      carryStableProfile: newTripCarryStableProfile,
     };
 
     setBusy(true);
@@ -1106,17 +1114,17 @@ export default function App() {
               <label className="TripBootstrapModal__check">
                 <input
                   type="checkbox"
-                  checked={newTripCarryHealthReligion}
-                  onChange={(e) => setNewTripCarryHealthReligion(e.target.checked)}
+                  checked={newTripCarryStableProfile}
+                  onChange={(e) => setNewTripCarryStableProfile(e.target.checked)}
                 />
                 <span>
                   {tr(
-                    "自动保留身体因素/信仰因素（若上轮存在）",
-                    "Auto-carry health/religion constraints (if found in previous trip)"
+                    "自动保留稳定画像（身体/信仰/语言/行动能力/饮食/安全等）",
+                    "Auto-carry stable profile (health/religion/language/mobility/diet/safety, etc.)"
                   )}
                 </span>
               </label>
-              {newTripCarryHealthReligion && autoCarryHints.length ? (
+              {newTripCarryStableProfile && autoCarryHints.length ? (
                 <div className="TripBootstrapModal__hint">
                   {tr("将自动带入：", "Auto-carry: ")}
                   {autoCarryHints.join("、")}

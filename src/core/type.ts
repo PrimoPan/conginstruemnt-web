@@ -107,6 +107,7 @@ export type TravelPlanningBootstrapRequest = {
     destination?: string;
     keepConsistentText?: string;
     carryHealthReligion?: boolean;
+    carryStableProfile?: boolean;
 };
 
 export type TaskDetection = {
