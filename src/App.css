@@ -1882,6 +1882,91 @@ body {
   align-items: end;
 }
 
+.TripBootstrapModal {
+  position: fixed;
+  inset: 0;
+  z-index: 1300;
+  display: grid;
+  place-items: center;
+}
+
+.TripBootstrapModal__mask {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.38);
+  backdrop-filter: blur(1px);
+}
+
+.TripBootstrapModal__panel {
+  position: relative;
+  width: min(560px, calc(100vw - 28px));
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 12px 40px rgba(15, 23, 42, 0.24);
+  padding: 14px;
+  display: grid;
+  gap: 10px;
+}
+
+.TripBootstrapModal__title {
+  font-size: 16px;
+  font-weight: 700;
+  color: rgba(15, 23, 42, 0.9);
+}
+
+.TripBootstrapModal__label {
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(51, 65, 85, 0.86);
+}
+
+.TripBootstrapModal__input {
+  width: 100%;
+}
+
+.TripBootstrapModal__textarea {
+  width: 100%;
+  min-height: 92px;
+  max-height: 180px;
+  resize: vertical;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  padding: 10px 12px;
+  font-size: 14px;
+  line-height: 1.45;
+  outline: none;
+}
+
+.TripBootstrapModal__textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.16);
+}
+
+.TripBootstrapModal__check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: rgba(51, 65, 85, 0.9);
+}
+
+.TripBootstrapModal__hint {
+  border-radius: 9px;
+  border: 1px dashed rgba(22, 163, 74, 0.45);
+  background: rgba(240, 253, 244, 0.92);
+  color: rgba(21, 128, 61, 0.9);
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.TripBootstrapModal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 @media (max-width: 1440px) {
   .Main {
     grid-template-columns: minmax(380px, 1fr) 320px minmax(500px, 1.2fr);

@@ -44,18 +44,48 @@ export function ChatPanel(props: {
         setInput("");
     };
 
+    function legacyCopyWithTextarea(text: string) {
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        ta.setAttribute("readonly", "true");
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        ta.style.pointerEvents = "none";
+        ta.style.top = "-9999px";
+        ta.style.left = "-9999px";
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        ta.setSelectionRange(0, text.length);
+        let ok = false;
+        try {
+            ok = document.execCommand("copy");
+        } finally {
+            document.body.removeChild(ta);
+        }
+        return ok;
+    }
+
+    async function copyText(text: string) {
+        if (navigator?.clipboard?.writeText) {
+            try {
+                await navigator.clipboard.writeText(text);
+                return true;
+            } catch {
+                // fallback below
+            }
+        }
+        return legacyCopyWithTextarea(text);
+    }
+
     async function copyMessage(msg: Msg) {
         const t = String(msg.text || "").trim();
         if (!t) return;
-        try {
-            if (navigator?.clipboard?.writeText) {
-                await navigator.clipboard.writeText(msg.text);
-                setCopiedMessageId(msg.id);
-                setCopyFailedMessageId("");
-                return;
-            }
-            throw new Error("Clipboard API not available");
-        } catch {
+        const ok = await copyText(msg.text);
+        if (ok) {
+            setCopiedMessageId(msg.id);
+            setCopyFailedMessageId("");
+        } else {
             setCopyFailedMessageId(msg.id);
             setCopiedMessageId("");
         }

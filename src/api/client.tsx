@@ -16,6 +16,7 @@ import type {
     TurnStreamStartData,
     TurnStreamPingData,
     TurnStreamErrorData,
+    TravelPlanningBootstrapRequest,
 } from "../core/type";
 
 const API_BASE_STORAGE_KEY = "cg.apiBase";
@@ -374,10 +375,22 @@ export const api = {
     listConversations: (token: string) =>
         http<ConversationSummary[]>("/api/conversations", {}, token),
 
-    createConversation: (token: string, title: string, locale: AppLocale) =>
+    createConversation: (
+        token: string,
+        title: string,
+        locale: AppLocale,
+        opts?: { planningBootstrap?: TravelPlanningBootstrapRequest }
+    ) =>
         http<ConversationCreateResponse>(
             "/api/conversations",
-            { method: "POST", body: JSON.stringify({ title, locale }) },
+            {
+                method: "POST",
+                body: JSON.stringify({
+                    title,
+                    locale,
+                    planningBootstrap: opts?.planningBootstrap || undefined,
+                }),
+            },
             token
         ),
 

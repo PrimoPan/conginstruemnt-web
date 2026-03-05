@@ -51,6 +51,7 @@ export function ConversationHistoryDrawer(props: {
   onRefresh: () => void;
   onSelectConversation: (conversationId: string) => void;
   onNewConversation: () => void;
+  onNewTravelPlanning: () => void;
   initialSearchQuery?: string;
 }) {
   const en = props.locale === "en-US";
@@ -106,6 +107,9 @@ export function ConversationHistoryDrawer(props: {
           <div className="HistoryDrawer__actions">
             <button className="Btn" type="button" onClick={props.onNewConversation}>
               {tr("新建", "New")}
+            </button>
+            <button className="Btn" type="button" onClick={props.onNewTravelPlanning}>
+              {tr("新旅行", "New Trip")}
             </button>
             <button className="Btn" type="button" onClick={props.onRefresh} disabled={props.loading}>
               {props.loading ? tr("刷新中...", "Refreshing...") : tr("刷新", "Refresh")}

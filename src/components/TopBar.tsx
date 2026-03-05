@@ -8,6 +8,7 @@ export function TopBar(props: {
     setUsername: (s: string) => void;
     onLogin: () => void;
     onNewConversation: () => void;
+    onNewTravelPlanning: () => void;
     onExportPlan: () => void;
     loggedIn: boolean;
     cid: string;
@@ -61,17 +62,12 @@ export function TopBar(props: {
                 </button>
                 <button
                     className="Btn"
-                    onClick={props.onExportPlan}
-                    disabled={props.exportPlanDisabled || props.exportingPlan || props.busy}
-                    title={props.exportPlanDisabled
-                        ? tr("请先开始对话后再导出", "Start a conversation before export")
-                        : tr("导出当前旅行计划 PDF", "Export current travel plan as PDF")}
+                    onClick={props.onNewTravelPlanning}
+                    disabled={!props.loggedIn || props.busy}
+                    title={tr("从上次经验新建旅行规划", "Start a new trip planning from reusable constraints")}
                 >
-                    {props.exportingPlan
-                        ? tr("导出中...", "Exporting...")
-                        : tr("导出旅行计划 PDF", "Export Travel Plan PDF")}
+                    {tr("新增旅游规划", "New Trip Plan")}
                 </button>
-
                 <div className="Meta">
                     {props.cid ? (
                         <>

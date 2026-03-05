@@ -19,6 +19,7 @@ import type {
   TravelPlanState,
   TurnResponse,
   TurnStreamErrorData,
+  TravelPlanningBootstrapRequest,
 } from "./core/type";
 import { TopBar } from "./components/TopBar";
 import { ChatPanel, Msg } from "./components/ChatPanel";
@@ -85,6 +86,14 @@ function uniqStrings(arr: string[], max = 40): string[] {
     if (out.length >= max) break;
   }
   return out;
+}
+
+function isHealthOrReligionConcept(c: ConceptItem): boolean {
+  const semantic = String(c?.semanticKey || "").toLowerCase();
+  if (semantic.startsWith("slot:constraint:limiting:health")) return true;
+  if (semantic.startsWith("slot:constraint:limiting:religion")) return true;
+  const text = `${c?.title || ""} ${c?.description || ""}`.toLowerCase();
+  return /冠心病|心脏|健康|医疗|health|cardiac|medical|宗教|信仰|礼拜|religion|faith|prayer|halal|kosher/i.test(text);
 }
 
 function stableConceptIdFromManual(semanticKey: string, kind: ConceptItem["kind"], polarity = "positive", scope = "global") {
@@ -250,10 +259,24 @@ export default function App() {
   const [conversationHistory, setConversationHistory] = useState<ConversationSummary[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState("");
+  const [newTripModalOpen, setNewTripModalOpen] = useState(false);
+  const [newTripDestination, setNewTripDestination] = useState("");
+  const [newTripKeepConsistentText, setNewTripKeepConsistentText] = useState("");
+  const [newTripCarryHealthReligion, setNewTripCarryHealthReligion] = useState(true);
   const loggedIn = !!token;
   const en = locale === "en-US";
   const tr = (zh: string, enText: string) => (en ? enText : zh);
   const historyLoadErrLabel = en ? "Failed to load conversation history" : "加载历史对话失败";
+  const autoCarryHints = useMemo(
+    () =>
+      uniqStrings(
+        (concepts || [])
+          .filter((c) => isHealthOrReligionConcept(c))
+          .map((c) => compactText(c.title, 80)),
+        6
+      ),
+    [concepts]
+  );
 
   // 中断上一次流（避免串台）
   const abortRef = useRef<AbortController | null>(null);
@@ -320,6 +343,15 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [historyPanelOpen]);
 
+  useEffect(() => {
+    if (!newTripModalOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setNewTripModalOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [newTripModalOpen]);
+
   const refreshConversationHistory = useCallback(async (opts?: { silent?: boolean }) => {
     if (!token) {
       setConversationHistory([]);
@@ -363,12 +395,7 @@ export default function App() {
     }
   }
 
-  async function onNewConversation() {
-    if (!token) return;
-
-    // 强制新会话：中断旧流并清空当前上下文
-    abortRef.current?.abort();
-    abortRef.current = null;
+  function resetConversationState() {
     setMessages([]);
     setGraph(emptyGraph);
     setDraftGraphPreview(emptyGraph);
@@ -388,6 +415,37 @@ export default function App() {
     setFocusNodeId("");
     setNodeHoverFocus(null);
     setGraphGenerating(false);
+  }
+
+  function applyConversationPayload(payload: any) {
+    const safeGraph = normalizeGraphClient(payload?.graph || emptyGraph);
+    setGraph(safeGraph);
+    setDraftGraphPreview(safeGraph);
+    setConcepts(Array.isArray(payload?.concepts) ? payload.concepts : []);
+    setMotifs(payloadMotifs(payload));
+    setMotifLinks(payloadMotifLinks(payload));
+    setMotifReasoningView(
+      normalizeReasoningViewPayload(
+        payload?.motifReasoningView || emptyMotifReasoningView,
+        payload?.reasoning_steps
+      )
+    );
+    setContexts(Array.isArray(payload?.contexts) ? payload.contexts : []);
+    setTravelPlanState(payloadTravelPlanState(payload));
+    setTaskDetection(payloadTaskDetection(payload));
+    setCognitiveState(payloadCognitiveState(payload));
+    setPortfolioDocumentState(payloadPortfolioState(payload));
+    setConceptsDirty(false);
+    setFlowHasUnsaved(false);
+  }
+
+  async function onNewConversation() {
+    if (!token) return;
+
+    // 强制新会话：中断旧流并清空当前上下文
+    abortRef.current?.abort();
+    abortRef.current = null;
+    resetConversationState();
 
     setBusy(true);
     try {
@@ -398,22 +456,50 @@ export default function App() {
         setLocale(r.locale);
         localStorage.setItem(LOCALE_STORAGE_KEY, r.locale);
       }
-      const safeGraph = normalizeGraphClient(r.graph);
-      setGraph(safeGraph);
-      setDraftGraphPreview(safeGraph);
-      setConcepts(Array.isArray(r.concepts) ? r.concepts : []);
-      setMotifs(payloadMotifs(r));
-      setMotifLinks(payloadMotifLinks(r));
-      setMotifReasoningView(
-          normalizeReasoningViewPayload(r.motifReasoningView || emptyMotifReasoningView, (r as any)?.reasoning_steps)
-      );
-      setContexts(Array.isArray(r.contexts) ? r.contexts : []);
-      setTravelPlanState(payloadTravelPlanState(r));
-      setTaskDetection(payloadTaskDetection(r));
-      setCognitiveState(payloadCognitiveState(r));
-      setPortfolioDocumentState(payloadPortfolioState(r));
-      setConceptsDirty(false);
-      setFlowHasUnsaved(false);
+      applyConversationPayload(r);
+      setHistoryPanelOpen(false);
+      refreshConversationHistory({ silent: true });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function onOpenNewTravelPlanningModal() {
+    if (!token) return;
+    setHistoryPanelOpen(false);
+    setNewTripDestination("");
+    setNewTripKeepConsistentText("");
+    setNewTripCarryHealthReligion(true);
+    setNewTripModalOpen(true);
+  }
+
+  async function onCreateNewTravelPlanning() {
+    if (!token) return;
+    const destination = newTripDestination.trim();
+    if (!destination) return;
+
+    abortRef.current?.abort();
+    abortRef.current = null;
+
+    const planningBootstrap: TravelPlanningBootstrapRequest = {
+      sourceConversationId: cid || undefined,
+      destination,
+      keepConsistentText: newTripKeepConsistentText.trim() || undefined,
+      carryHealthReligion: newTripCarryHealthReligion,
+    };
+
+    setBusy(true);
+    try {
+      const title = tr(`旅行规划·${destination}`, `Trip Plan · ${destination}`);
+      const r = await api.createConversation(token, title, locale, { planningBootstrap });
+      setCid(r.conversationId);
+      localStorage.setItem("ci_cid", r.conversationId);
+      if (r?.locale) {
+        setLocale(r.locale);
+        localStorage.setItem(LOCALE_STORAGE_KEY, r.locale);
+      }
+      applyConversationPayload(r);
+      setNewTripModalOpen(false);
       setHistoryPanelOpen(false);
       refreshConversationHistory({ silent: true });
     } finally {
@@ -970,6 +1056,7 @@ export default function App() {
           onRefresh={() => refreshConversationHistory()}
           onSelectConversation={onSelectConversation}
           onNewConversation={onNewConversation}
+          onNewTravelPlanning={onOpenNewTravelPlanningModal}
         />
         <TopBar
             locale={locale}
@@ -981,6 +1068,7 @@ export default function App() {
             setUsername={setUsername}
             onLogin={onLogin}
             onNewConversation={onNewConversation}
+            onNewTravelPlanning={onOpenNewTravelPlanningModal}
             onExportPlan={onExportPlan}
             loggedIn={loggedIn}
             cid={cid}
@@ -989,6 +1077,72 @@ export default function App() {
             exportingPlan={exportingPlan}
             exportPlanDisabled={exportPlanDisabled}
         />
+
+        {newTripModalOpen ? (
+          <div className="TripBootstrapModal" role="dialog" aria-modal="true">
+            <div className="TripBootstrapModal__mask" onClick={() => setNewTripModalOpen(false)} />
+            <div className="TripBootstrapModal__panel">
+              <div className="TripBootstrapModal__title">
+                {tr("新增旅游规划", "Create New Trip Plan")}
+              </div>
+              <label className="TripBootstrapModal__label">
+                {tr("你想去哪里玩？", "Where do you want to travel next?")}
+              </label>
+              <input
+                className="Input TripBootstrapModal__input"
+                value={newTripDestination}
+                onChange={(e) => setNewTripDestination(e.target.value)}
+                placeholder={tr("例如：京都", "e.g. Kyoto")}
+              />
+              <label className="TripBootstrapModal__label">
+                {tr("与上次保持一致的信息（可选）", "What should stay consistent from the last trip? (optional)")}
+              </label>
+              <textarea
+                className="TripBootstrapModal__textarea"
+                value={newTripKeepConsistentText}
+                onChange={(e) => setNewTripKeepConsistentText(e.target.value)}
+                placeholder={tr("例如：预算上限、住宿安全、旅行节奏", "e.g. budget cap, safe lodging, low-intensity pace")}
+              />
+              <label className="TripBootstrapModal__check">
+                <input
+                  type="checkbox"
+                  checked={newTripCarryHealthReligion}
+                  onChange={(e) => setNewTripCarryHealthReligion(e.target.checked)}
+                />
+                <span>
+                  {tr(
+                    "自动保留身体因素/信仰因素（若上轮存在）",
+                    "Auto-carry health/religion constraints (if found in previous trip)"
+                  )}
+                </span>
+              </label>
+              {newTripCarryHealthReligion && autoCarryHints.length ? (
+                <div className="TripBootstrapModal__hint">
+                  {tr("将自动带入：", "Auto-carry: ")}
+                  {autoCarryHints.join("、")}
+                </div>
+              ) : null}
+              <div className="TripBootstrapModal__actions">
+                <button
+                  className="Btn"
+                  type="button"
+                  onClick={() => setNewTripModalOpen(false)}
+                  disabled={busy}
+                >
+                  {tr("取消", "Cancel")}
+                </button>
+                <button
+                  className="Btn Btn--active"
+                  type="button"
+                  onClick={onCreateNewTravelPlanning}
+                  disabled={busy || !newTripDestination.trim()}
+                >
+                  {tr("创建并开始", "Create & Start")}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
 
         <div className={mainCls}>
           <div className="Left">

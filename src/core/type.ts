@@ -102,6 +102,13 @@ export type ConversationSummary = {
     locale?: AppLocale;
 };
 
+export type TravelPlanningBootstrapRequest = {
+    sourceConversationId?: string;
+    destination?: string;
+    keepConsistentText?: string;
+    carryHealthReligion?: boolean;
+};
+
 export type TaskDetection = {
     current_task_id: string;
     is_task_switch: boolean;
