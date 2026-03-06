@@ -86,6 +86,7 @@ function makeConversationPayload(
   overrides?: Partial<{
     title: string;
     locale: "zh-CN" | "en-US";
+    taskLifecycle: any;
   }>
 ) {
   return {
@@ -103,6 +104,7 @@ function makeConversationPayload(
     motifs: [],
     motifLinks: [],
     contexts: [],
+    taskLifecycle: overrides?.taskLifecycle,
   };
 }
 
@@ -122,6 +124,7 @@ test("renders CogInstrument shell", () => {
 
 test("keeps the new conversation active when stale restore request fails later", async () => {
   localStorage.setItem("ci_cid", "stale-cid");
+  localStorage.setItem("ci_username", "test");
 
   const staleConversationLoad = deferred<any>();
   mockedApi.login.mockResolvedValue({
@@ -163,6 +166,34 @@ test("keeps the new conversation active when stale restore request fails later",
   expect(localStorage.getItem("ci_cid")).toBe("new-cid");
 });
 
+test("login should clear stale saved conversation when switching to a different user", async () => {
+  localStorage.setItem("ci_token", "old-token");
+  localStorage.setItem("ci_cid", "stale-cid");
+  localStorage.setItem("ci_username", "old-user");
+
+  mockedApi.login.mockResolvedValue({
+    userId: "u2",
+    username: "new-user",
+    sessionToken: "token-2",
+  });
+
+  render(<App />);
+
+  const usernameInput = screen.getByPlaceholderText("用户名（无密码）");
+  fireEvent.change(usernameInput, { target: { value: "new-user" } });
+  fireEvent.click(screen.getByRole("button", { name: "登录" }));
+
+  await waitFor(() => {
+    expect(mockedApi.login).toHaveBeenCalledWith("new-user");
+  });
+
+  await waitFor(() => {
+    expect(localStorage.getItem("ci_cid")).toBeNull();
+  });
+  expect(mockedApi.getConversation).not.toHaveBeenCalledWith("token-2", "stale-cid");
+  expect(screen.getByPlaceholderText("请先登录并新建对话…")).toBeDisabled();
+});
+
 test("preferred locale only affects new chats while current conversation locale stays locked", async () => {
   localStorage.setItem("ci_token", "token-1");
   localStorage.setItem("ci_cid", "active-zh");
@@ -190,4 +221,27 @@ test("preferred locale only affects new chats while current conversation locale 
   });
 
   expect(await screen.findByPlaceholderText("Type a message (Enter to send)")).toBeInTheDocument();
+});
+
+test("restores closed task guard when reopening a closed conversation", async () => {
+  localStorage.setItem("ci_token", "token-1");
+  localStorage.setItem("ci_cid", "closed-cid");
+
+  mockedApi.getConversation.mockResolvedValue(
+    makeConversationPayload("closed-cid", {
+      taskLifecycle: {
+        status: "closed",
+        endedAt: "2026-03-06T11:14:37.076Z",
+        endedTaskId: "closed-cid",
+        resumable: true,
+        resume_required: true,
+      },
+    })
+  );
+
+  render(<App />);
+
+  expect(await screen.findByText("当前任务已结束")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "恢复当前任务" })).toBeInTheDocument();
+  expect(screen.getByPlaceholderText("输入一句话（Enter 发送）")).toBeDisabled();
 });

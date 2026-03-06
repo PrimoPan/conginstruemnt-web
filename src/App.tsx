@@ -42,6 +42,7 @@ const emptyMotifReasoningView: MotifReasoningView = { nodes: [], edges: [] };
 const LOCALE_STORAGE_KEY = "ci_locale";
 const CONCEPT_PANEL_COLLAPSED_STORAGE_KEY = "ci_concept_panel_collapsed";
 const PLAN_STATE_PANEL_COLLAPSED_STORAGE_KEY = "ci_plan_state_panel_collapsed";
+const USERNAME_STORAGE_KEY = "ci_username";
 
 function clamp01(v: any, fallback = 0.7) {
   const n = Number(v);
@@ -310,6 +311,17 @@ function payloadTaskLifecycle(payload: any): TaskLifecycleState | null {
   };
 }
 
+function taskActionPromptFromLifecycle(
+  lifecycle: TaskLifecycleState | null
+): TaskActionPrompt | null {
+  if (lifecycle?.status !== "closed") return null;
+  return {
+    endedAt: lifecycle.endedAt,
+    endedTaskId: lifecycle.endedTaskId,
+    resumable: lifecycle.resumable !== false,
+  };
+}
+
 function cleanUiError(input: any, max = 220): string {
   return String(input ?? "")
     .replace(/<[^>]*>/g, " ")
@@ -457,7 +469,9 @@ export default function App() {
         setCognitiveState(payloadCognitiveState(conv));
         setMotifTransferState(payloadMotifTransferState(conv));
         setPortfolioDocumentState(payloadPortfolioState(conv));
-        setTaskLifecycle(payloadTaskLifecycle(conv));
+        const nextLifecycle = payloadTaskLifecycle(conv);
+        setTaskLifecycle(nextLifecycle);
+        setTaskActionPrompt(taskActionPromptFromLifecycle(nextLifecycle));
         setConceptsDirty(false);
         setFlowHasUnsaved(false);
         setActiveConceptId("");
@@ -556,8 +570,18 @@ export default function App() {
     setBusy(true);
     try {
       const r = await api.login(u);
+      const previousUsername = compactText(localStorage.getItem(USERNAME_STORAGE_KEY), 64);
+      const hasSavedConversation = !!compactText(localStorage.getItem("ci_cid"), 120);
+      const shouldDropSavedConversation = hasSavedConversation && previousUsername !== u;
+      if (shouldDropSavedConversation) {
+        conversationLoadSeqRef.current += 1;
+        localStorage.removeItem("ci_cid");
+        setCid("");
+        resetConversationState();
+      }
       setToken(r.sessionToken);
       localStorage.setItem("ci_token", r.sessionToken);
+      localStorage.setItem(USERNAME_STORAGE_KEY, u);
     } catch (e: any) {
       setMessages((prev) => [
         ...prev,
@@ -628,15 +652,7 @@ export default function App() {
     setPortfolioDocumentState(payloadPortfolioState(payload));
     const nextLifecycle = payloadTaskLifecycle(payload);
     setTaskLifecycle(nextLifecycle);
-    setTaskActionPrompt(
-      nextLifecycle?.status === "closed"
-        ? {
-            endedAt: nextLifecycle.endedAt,
-            endedTaskId: nextLifecycle.endedTaskId,
-            resumable: nextLifecycle.resumable !== false,
-          }
-        : null
-    );
+    setTaskActionPrompt(taskActionPromptFromLifecycle(nextLifecycle));
     setAwaitingFirstTurnReview(false);
     setConceptsDirty(false);
     setFlowHasUnsaved(false);
