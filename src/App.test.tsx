@@ -81,11 +81,17 @@ function deferred<T>(): Deferred<T> {
   return { promise, resolve, reject };
 }
 
-function makeConversationPayload(conversationId: string) {
+function makeConversationPayload(
+  conversationId: string,
+  overrides?: Partial<{
+    title: string;
+    locale: "zh-CN" | "en-US";
+  }>
+) {
   return {
     conversationId,
-    title: "新对话",
-    locale: "zh-CN" as const,
+    title: overrides?.title || "新对话",
+    locale: overrides?.locale || ("zh-CN" as const),
     systemPrompt: "system",
     graph: {
       id: conversationId,
@@ -155,4 +161,33 @@ test("keeps the new conversation active when stale restore request fails later",
     expect(screen.getByPlaceholderText("输入一句话（Enter 发送）")).not.toBeDisabled();
   });
   expect(localStorage.getItem("ci_cid")).toBe("new-cid");
+});
+
+test("preferred locale only affects new chats while current conversation locale stays locked", async () => {
+  localStorage.setItem("ci_token", "token-1");
+  localStorage.setItem("ci_cid", "active-zh");
+
+  mockedApi.getConversation.mockResolvedValue(makeConversationPayload("active-zh", { locale: "zh-CN" }));
+  mockedApi.createConversation.mockResolvedValue(
+    makeConversationPayload("new-en", {
+      title: "New Conversation",
+      locale: "en-US",
+    })
+  );
+
+  render(<App />);
+
+  expect(await screen.findByPlaceholderText("输入一句话（Enter 发送）")).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: "EN" }));
+
+  expect(screen.getByPlaceholderText("输入一句话（Enter 发送）")).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: "新建对话" }));
+
+  await waitFor(() => {
+    expect(mockedApi.createConversation).toHaveBeenCalledWith("token-1", "New Conversation", "en-US");
+  });
+
+  expect(await screen.findByPlaceholderText("Type a message (Enter to send)")).toBeInTheDocument();
 });

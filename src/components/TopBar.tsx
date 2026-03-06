@@ -3,7 +3,8 @@ import type { AppLocale } from "../core/type";
 
 export function TopBar(props: {
     locale: AppLocale;
-    onLocaleChange: (locale: AppLocale) => void;
+    preferredLocale: AppLocale;
+    onPreferredLocaleChange: (locale: AppLocale) => void;
     username: string;
     setUsername: (s: string) => void;
     onLogin: () => void;
@@ -20,28 +21,34 @@ export function TopBar(props: {
 }) {
     const en = props.locale === "en-US";
     const tr = (zh: string, enText: string) => (en ? enText : zh);
+    const preferredEn = props.preferredLocale === "en-US";
 
     return (
         <div className="TopBar">
             <div className="TopBar__left">
                 <div className="Brand">CogInstrument</div>
-                <div className="Sub">{en ? "Research demo (EN)" : "Research demo (CN)"}</div>
+                <div className="Sub">
+                    {en ? "Research demo (EN)" : "Research demo (CN)"} ·{" "}
+                    {props.cid
+                        ? tr("当前会话语言已锁定", "Current chat locale is locked")
+                        : tr("新会话默认语言", "Default locale for new chats")}
+                </div>
             </div>
 
             <div className="TopBar__right">
                 <button
-                    className={`Btn ${!en ? "Btn--active" : ""}`}
-                    onClick={() => props.onLocaleChange("zh-CN")}
+                    className={`Btn ${!preferredEn ? "Btn--active" : ""}`}
+                    onClick={() => props.onPreferredLocaleChange("zh-CN")}
                     disabled={props.busy}
-                    title={tr("切换到中文", "Switch to Chinese")}
+                    title={tr("新会话默认使用中文", "Use Chinese by default for new chats")}
                 >
                     中文
                 </button>
                 <button
-                    className={`Btn ${en ? "Btn--active" : ""}`}
-                    onClick={() => props.onLocaleChange("en-US")}
+                    className={`Btn ${preferredEn ? "Btn--active" : ""}`}
+                    onClick={() => props.onPreferredLocaleChange("en-US")}
                     disabled={props.busy}
-                    title="Switch to English"
+                    title={tr("新会话默认使用英文", "Use English by default for new chats")}
                 >
                     EN
                 </button>

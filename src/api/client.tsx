@@ -525,8 +525,12 @@ export const api = {
             body: JSON.stringify({ username }),
         }),
 
-    listConversations: (token: string) =>
-        http<ConversationSummary[]>("/api/conversations", {}, token),
+    listConversations: (token: string, locale?: AppLocale) =>
+        http<ConversationSummary[]>(
+            `/api/conversations${locale ? `?locale=${encodeURIComponent(locale)}` : ""}`,
+            {},
+            token
+        ),
 
     createConversation: (
         token: string,

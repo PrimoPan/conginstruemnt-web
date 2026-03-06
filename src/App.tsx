@@ -320,10 +320,11 @@ function cleanUiError(input: any, max = 220): string {
 
 export default function App() {
   const [username, setUsername] = useState("test");
-  const [locale, setLocale] = useState<AppLocale>(() => {
+  const [preferredLocale, setPreferredLocale] = useState<AppLocale>(() => {
     const raw = String(localStorage.getItem(LOCALE_STORAGE_KEY) || "").trim().toLowerCase();
     return raw.startsWith("en") ? "en-US" : "zh-CN";
   });
+  const [conversationLocale, setConversationLocale] = useState<AppLocale | null>(null);
 
   const [token, setToken] = useState<string>(localStorage.getItem("ci_token") || "");
   const [cid, setCid] = useState<string>(localStorage.getItem("ci_cid") || "");
@@ -375,6 +376,7 @@ export default function App() {
   const [newTripKeepConsistentText, setNewTripKeepConsistentText] = useState("");
   const [newTripCarryStableProfile, setNewTripCarryStableProfile] = useState(true);
   const loggedIn = !!token;
+  const locale = conversationLocale || preferredLocale;
   const en = locale === "en-US";
   const tr = (zh: string, enText: string) => (en ? enText : zh);
   const userFacingError = (err: any, zhFallback: string, enFallback: string) => {
@@ -438,8 +440,7 @@ export default function App() {
         const conv = await api.getConversation(token, requestedConversationId);
         if (isStale()) return;
         if (conv?.locale) {
-          setLocale(conv.locale);
-          localStorage.setItem(LOCALE_STORAGE_KEY, conv.locale);
+          setConversationLocale(conv.locale);
         }
         const safeGraph = normalizeGraphClient(conv.graph);
         setGraph(safeGraph);
@@ -526,7 +527,7 @@ export default function App() {
     if (!opts?.silent) setHistoryLoading(true);
     setHistoryError("");
     try {
-      const list = await api.listConversations(token);
+      const list = await api.listConversations(token, locale);
       if (isStale()) return;
       setConversationHistory(Array.isArray(list) ? list : []);
     } catch (e: any) {
@@ -536,7 +537,7 @@ export default function App() {
       if (isStale()) return;
       setHistoryLoading(false);
     }
-  }, [token, historyLoadErrLabel]);
+  }, [token, historyLoadErrLabel, locale]);
 
   useEffect(() => {
     if (!token) {
@@ -576,6 +577,7 @@ export default function App() {
   }
 
   function resetConversationState() {
+    setConversationLocale(null);
     setMessages([]);
     setGraph(emptyGraph);
     setDraftGraphPreview(emptyGraph);
@@ -603,6 +605,9 @@ export default function App() {
   }
 
   function applyConversationPayload(payload: any) {
+    if (payload?.locale === "zh-CN" || payload?.locale === "en-US") {
+      setConversationLocale(payload.locale);
+    }
     const safeGraph = normalizeGraphClient(payload?.graph || emptyGraph);
     setGraph(safeGraph);
     setDraftGraphPreview(safeGraph);
@@ -647,12 +652,12 @@ export default function App() {
 
     setBusy(true);
     try {
-      const r = await api.createConversation(token, tr("新对话", "New Conversation"), locale);
+      const title = preferredLocale === "en-US" ? "New Conversation" : "新对话";
+      const r = await api.createConversation(token, title, preferredLocale);
       setCid(r.conversationId);
       localStorage.setItem("ci_cid", r.conversationId);
       if (r?.locale) {
-        setLocale(r.locale);
-        localStorage.setItem(LOCALE_STORAGE_KEY, r.locale);
+        setConversationLocale(r.locale);
       }
       applyConversationPayload(r);
       setHistoryPanelOpen(false);
@@ -785,13 +790,16 @@ export default function App() {
 
     setBusy(true);
     try {
-      const title = tr(`旅行规划·${destination}`, `Trip Plan · ${destination}`);
-      const r = await api.createConversation(token, title, locale, { planningBootstrap });
+      const title = preferredLocale === "en-US" ? `Trip Plan · ${destination}` : `旅行规划·${destination}`;
+      const nextPlanningBootstrap: TravelPlanningBootstrapRequest = {
+        ...planningBootstrap,
+        sourceConversationId: conversationLocale === preferredLocale ? planningBootstrap.sourceConversationId : undefined,
+      };
+      const r = await api.createConversation(token, title, preferredLocale, { planningBootstrap: nextPlanningBootstrap });
       setCid(r.conversationId);
       localStorage.setItem("ci_cid", r.conversationId);
       if (r?.locale) {
-        setLocale(r.locale);
-        localStorage.setItem(LOCALE_STORAGE_KEY, r.locale);
+        setConversationLocale(r.locale);
       }
       applyConversationPayload(r);
       setNewTripModalOpen(false);
@@ -1105,7 +1113,7 @@ export default function App() {
       if (emitVirtualStructureMessage) {
         setMessages((prev) => [
           ...prev,
-          { id: makeId("virtual_save"), role: "user", text: "已更改coginstrument结构" },
+          { id: makeId("virtual_save"), role: "user", text: tr("已更改coginstrument结构", "Updated the CogInstrument structure") },
         ]);
       }
       if (out?.conflictGate?.blocked) {
@@ -1670,8 +1678,9 @@ export default function App() {
         />
         <TopBar
             locale={locale}
-            onLocaleChange={(next) => {
-              setLocale(next);
+            preferredLocale={preferredLocale}
+            onPreferredLocaleChange={(next) => {
+              setPreferredLocale(next);
               localStorage.setItem(LOCALE_STORAGE_KEY, next);
             }}
             username={username}
