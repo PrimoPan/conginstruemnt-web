@@ -188,6 +188,11 @@ function parseTaskClosedPrompt(err: any): TaskActionPrompt | null {
   };
 }
 
+function shouldClearConversationOnLoadError(err: any) {
+  if (!(err instanceof ApiHttpError)) return false;
+  return err.status === 400 || err.status === 401 || err.status === 404;
+}
+
 function kindFromNodeType(nodeType: ManualMotifDraft["sourceNodeType"]): ConceptItem["kind"] {
   if (nodeType === "constraint") return "constraint";
   if (nodeType === "preference") return "preference";
@@ -407,6 +412,8 @@ export default function App() {
 
   // 中断上一次流（避免串台）
   const abortRef = useRef<AbortController | null>(null);
+  const conversationLoadSeqRef = useRef(0);
+  const historyLoadSeqRef = useRef(0);
 
   // 卸载时中断
   useEffect(() => {
@@ -415,11 +422,21 @@ export default function App() {
 
   // 恢复会话：拉 graph + turns
   useEffect(() => {
-    if (!token || !cid) return;
+    if (!token || !cid) {
+      conversationLoadSeqRef.current += 1;
+      return;
+    }
+
+    const requestedConversationId = cid;
+    const loadSeq = conversationLoadSeqRef.current + 1;
+    conversationLoadSeqRef.current = loadSeq;
+    let cancelled = false;
+    const isStale = () => cancelled || conversationLoadSeqRef.current !== loadSeq;
 
     (async () => {
       try {
-        const conv = await api.getConversation(token, cid);
+        const conv = await api.getConversation(token, requestedConversationId);
+        if (isStale()) return;
         if (conv?.locale) {
           setLocale(conv.locale);
           localStorage.setItem(LOCALE_STORAGE_KEY, conv.locale);
@@ -446,7 +463,8 @@ export default function App() {
         setActiveMotifId("");
         setFocusNodeId("");
 
-        const turns = await api.getTurns(token, cid, 120);
+        const turns = await api.getTurns(token, requestedConversationId, 120);
+        if (isStale()) return;
         const ms: Msg[] = [];
 
         for (const t of turns) {
@@ -456,11 +474,20 @@ export default function App() {
         }
 
         setMessages(ms);
-      } catch {
-        localStorage.removeItem("ci_cid");
-        setCid("");
+      } catch (e: any) {
+        if (isStale()) return;
+        if (!shouldClearConversationOnLoadError(e)) return;
+
+        if (localStorage.getItem("ci_cid") === requestedConversationId) {
+          localStorage.removeItem("ci_cid");
+        }
+        resetConversationState();
+        setCid((current) => (current === requestedConversationId ? "" : current));
       }
     })();
+    return () => {
+      cancelled = true;
+    };
   }, [token, cid]);
 
   useEffect(() => {
@@ -487,19 +514,26 @@ export default function App() {
 
   const refreshConversationHistory = useCallback(async (opts?: { silent?: boolean }) => {
     if (!token) {
+      historyLoadSeqRef.current += 1;
       setConversationHistory([]);
       setHistoryError("");
       setHistoryLoading(false);
       return;
     }
+    const loadSeq = historyLoadSeqRef.current + 1;
+    historyLoadSeqRef.current = loadSeq;
+    const isStale = () => historyLoadSeqRef.current !== loadSeq;
     if (!opts?.silent) setHistoryLoading(true);
     setHistoryError("");
     try {
       const list = await api.listConversations(token);
+      if (isStale()) return;
       setConversationHistory(Array.isArray(list) ? list : []);
     } catch (e: any) {
+      if (isStale()) return;
       setHistoryError(`${historyLoadErrLabel}: ${e?.message || String(e)}`);
     } finally {
+      if (isStale()) return;
       setHistoryLoading(false);
     }
   }, [token, historyLoadErrLabel]);
@@ -523,6 +557,19 @@ export default function App() {
       const r = await api.login(u);
       setToken(r.sessionToken);
       localStorage.setItem("ci_token", r.sessionToken);
+    } catch (e: any) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: makeId("login_err"),
+          role: "assistant",
+          text: `${tr("登录失败", "Login failed")}: ${userFacingError(
+            e,
+            "请求失败，请稍后重试。",
+            "Request failed. Please retry later."
+          )}`,
+        },
+      ]);
     } finally {
       setBusy(false);
     }
@@ -610,6 +657,19 @@ export default function App() {
       applyConversationPayload(r);
       setHistoryPanelOpen(false);
       refreshConversationHistory({ silent: true });
+    } catch (e: any) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: makeId("new_conv_err"),
+          role: "assistant",
+          text: `${tr("新建对话失败", "Failed to create conversation")}: ${userFacingError(
+            e,
+            "请求失败，请稍后重试。",
+            "Request failed. Please retry later."
+          )}`,
+        },
+      ]);
     } finally {
       setBusy(false);
     }
@@ -738,6 +798,19 @@ export default function App() {
       setHistoryPanelOpen(false);
       setTaskActionPrompt(null);
       refreshConversationHistory({ silent: true });
+    } catch (e: any) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: makeId("new_trip_err"),
+          role: "assistant",
+          text: `${tr("创建旅行规划失败", "Failed to create trip plan")}: ${userFacingError(
+            e,
+            "请求失败，请稍后重试。",
+            "Request failed. Please retry later."
+          )}`,
+        },
+      ]);
     } finally {
       setBusy(false);
     }
@@ -897,10 +970,12 @@ export default function App() {
         signal: ac.signal,
 
         onStart: (_d) => {
+          if (abortRef.current !== ac || ac.signal.aborted) return;
           // 可选：你可以在这里做 UI 状态提示
         },
 
         onToken: (tk: string) => {
+          if (abortRef.current !== ac || ac.signal.aborted) return;
           setMessages((prev) =>
               prev.map((msg) =>
                   msg.id === assistantId ? { ...msg, text: (msg.text || "") + tk } : msg
@@ -909,6 +984,7 @@ export default function App() {
         },
 
         onDone: (out: TurnResponse) => {
+          if (abortRef.current !== ac || ac.signal.aborted) return;
           // 最终覆盖一次，避免丢 token/换行
           setMessages((prev) =>
               prev.map((msg) =>
@@ -944,7 +1020,7 @@ export default function App() {
         },
 
         onError: (err: TurnStreamErrorData) => {
-          if (ac.signal.aborted) return;
+          if (abortRef.current !== ac || ac.signal.aborted) return;
           setAwaitingFirstTurnReview(false);
           setMessages((prev) =>
               prev.map((msg) =>
