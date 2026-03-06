@@ -28,6 +28,13 @@ export function ChatPanel(props: {
     onRemoveModeCReference?: (referenceId: string) => void;
     onFeedbackNotApplicable?: (payload: { messageId: string; text: string }) => void;
     onMotifNotApplicable?: (candidateId?: string, motifTypeId?: string) => void;
+    taskActionPrompt?: {
+        endedAt?: string;
+        endedTaskId?: string;
+        resumable: boolean;
+    } | null;
+    onResumeTask?: () => void;
+    onStartNewTask?: () => void;
 }) {
     const en = props.locale === "en-US";
     const tr = (zh: string, enText: string) => (en ? enText : zh);
@@ -40,7 +47,10 @@ export function ChatPanel(props: {
         [props.messages]
     );
 
-    const canSend = useMemo(() => !props.disabled && !props.busy, [props.disabled, props.busy]);
+    const canSend = useMemo(
+        () => !props.disabled && !props.busy && !props.taskActionPrompt,
+        [props.busy, props.disabled, props.taskActionPrompt]
+    );
     const injectedMotifs = useMemo(
         () =>
             (props.motifTransferState?.activeInjections || []).filter(
@@ -249,6 +259,29 @@ export function ChatPanel(props: {
             </div>
 
             <div className="ChatComposer">
+                {props.taskActionPrompt ? (
+                    <div className="ChatComposer__taskPrompt">
+                        <div className="ChatComposer__taskPromptTitle">
+                            {tr("当前任务已结束", "Current task is closed")}
+                        </div>
+                        <div className="ChatComposer__taskPromptHint">
+                            {tr(
+                                "请显式恢复当前任务，或新建一个任务后再继续。",
+                                "Resume this task explicitly or start a new one before continuing."
+                            )}
+                        </div>
+                        <div className="ChatComposer__taskPromptActions">
+                            <button type="button" className="Btn FlowToolbar__btn" onClick={() => props.onStartNewTask?.()}>
+                                {tr("新建任务", "Start New Task")}
+                            </button>
+                            {props.taskActionPrompt.resumable ? (
+                                <button type="button" className="Btn FlowToolbar__btn" onClick={() => props.onResumeTask?.()}>
+                                    {tr("恢复当前任务", "Resume Task")}
+                                </button>
+                            ) : null}
+                        </div>
+                    </div>
+                ) : null}
                 {modeCReferences.length ? (
                     <div className="ChatComposer__references">
                         <div className="ChatComposer__referencesTitle">

@@ -160,6 +160,7 @@ export function ConceptPanel(props: {
     concepts: ConceptItem[];
     motifs: ConceptMotif[];
     motifTransferState?: MotifTransferState | null;
+    transferReviewStage?: "ready" | "fresh_task" | "awaiting_first_turn_review" | "no_transfer_match";
     motifLibrary?: MotifLibraryEntry[];
     contexts?: ContextItem[];
     activeConceptId?: string;
@@ -228,6 +229,7 @@ export function ConceptPanel(props: {
         concepts,
         motifs,
         motifTransferState,
+        transferReviewStage,
         motifLibrary,
         contexts,
         activeConceptId,
@@ -528,6 +530,33 @@ export function ConceptPanel(props: {
 
                 {tab === "motif" && !motifList.length ? (
                     <div className="ConceptPanel__empty">{tr(locale, "当前还没有可用 motif。", "No motifs yet.")}</div>
+                ) : null}
+
+                {tab === "motif" && !transferRecommendations.length && transferReviewStage && transferReviewStage !== "ready" ? (
+                    <div className="TransferSuggestions">
+                        <div className="TransferSuggestions__title">
+                            {tr(locale, "来自上次任务的建议", "Suggested from previous tasks")}
+                        </div>
+                        <div className="ConceptPanel__empty">
+                            {transferReviewStage === "fresh_task"
+                                ? tr(
+                                    locale,
+                                    "新任务已创建。首轮 assistant 回复完成后，这里会静默展示 2-4 条历史规则建议。",
+                                    "This task is newly created. After the first assistant reply, 2-4 historical motif suggestions will appear here silently."
+                                )
+                                : transferReviewStage === "awaiting_first_turn_review"
+                                ? tr(
+                                    locale,
+                                    "正在根据首轮对话评估可迁移规则，请稍候。",
+                                    "Evaluating transferable motifs from the first turn. Please wait."
+                                )
+                                : tr(
+                                    locale,
+                                    "首轮评审已完成，但没有足够匹配的历史规则需要推荐。",
+                                    "First-turn review is complete. No strong historical motif matches were found."
+                                )}
+                        </div>
+                    </div>
                 ) : null}
 
                 {tab === "motif" && transferRecommendations.length ? (

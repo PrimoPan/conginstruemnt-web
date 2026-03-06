@@ -2,7 +2,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 
-import { api } from "./api/client";
+import { api, ApiHttpError } from "./api/client";
 import type {
   AppLocale,
   CDG,
@@ -128,6 +128,66 @@ function relationToLinkType(relation: ConceptMotif["relation"]): MotifLink["type
   return "supports";
 }
 
+type TaskActionPrompt = {
+  endedAt?: string;
+  endedTaskId?: string;
+  resumable: boolean;
+};
+
+type TransferReviewStage = "ready" | "fresh_task" | "awaiting_first_turn_review" | "no_transfer_match";
+
+function mergeSummarySelectionsByMotifType(
+  selections: Array<{
+    motif_id?: string;
+    motif_type_id?: string;
+    store?: boolean;
+    abstraction_levels?: Array<"L1" | "L2" | "L3">;
+    abstraction_text?: { L1?: string; L2?: string; L3?: string };
+  }>
+) {
+  const merged = new Map<
+    string,
+    {
+      motif_id?: string;
+      motif_type_id?: string;
+      store?: boolean;
+      abstraction_levels?: Array<"L1" | "L2" | "L3">;
+      abstraction_text?: { L1?: string; L2?: string; L3?: string };
+    }
+  >();
+  for (const row of selections || []) {
+    const motifTypeId = compactText(row?.motif_type_id, 180);
+    if (!motifTypeId || row?.store === false) continue;
+    const base = merged.get(motifTypeId);
+    const nextLevels = uniqStrings([...(base?.abstraction_levels || []), ...((row?.abstraction_levels || []) as string[])], 3)
+      .filter((x): x is "L1" | "L2" | "L3" => x === "L1" || x === "L2" || x === "L3");
+    merged.set(motifTypeId, {
+      motif_id: row?.motif_id || base?.motif_id,
+      motif_type_id: motifTypeId,
+      store: true,
+      abstraction_levels: nextLevels,
+      abstraction_text: {
+        L1: compactText(row?.abstraction_text?.L1 || base?.abstraction_text?.L1, 180) || undefined,
+        L2: compactText(row?.abstraction_text?.L2 || base?.abstraction_text?.L2, 180) || undefined,
+        L3: compactText(row?.abstraction_text?.L3 || base?.abstraction_text?.L3, 220) || undefined,
+      },
+    });
+  }
+  return Array.from(merged.values());
+}
+
+function parseTaskClosedPrompt(err: any): TaskActionPrompt | null {
+  if (!(err instanceof ApiHttpError)) return null;
+  if (err.status !== 409) return null;
+  const code = String(err.code || err.data?.error || "").trim().toLowerCase();
+  if (code !== "task_closed") return null;
+  return {
+    endedAt: compactText(err.data?.ended_at, 48) || undefined,
+    endedTaskId: compactText(err.data?.ended_task_id, 120) || undefined,
+    resumable: err.data?.resumable !== false,
+  };
+}
+
 function kindFromNodeType(nodeType: ManualMotifDraft["sourceNodeType"]): ConceptItem["kind"] {
   if (nodeType === "constraint") return "constraint";
   if (nodeType === "preference") return "preference";
@@ -240,6 +300,8 @@ function payloadTaskLifecycle(payload: any): TaskLifecycleState | null {
     endedTaskId: compactText((x as any)?.endedTaskId, 120) || undefined,
     reopenedAt: compactText((x as any)?.reopenedAt, 48) || undefined,
     updatedAt: compactText((x as any)?.updatedAt, 48) || undefined,
+    resumable: (x as any)?.resumable !== false,
+    resume_required: !!(x as any)?.resume_required,
   };
 }
 
@@ -302,6 +364,8 @@ export default function App() {
   const [summaryModalOpen, setSummaryModalOpen] = useState(false);
   const [pendingTaskEndAction, setPendingTaskEndAction] = useState<"export" | "new_trip" | "end_task" | null>(null);
   const [modeCReferences, setModeCReferences] = useState<ModeCReferenceItem[]>([]);
+  const [taskActionPrompt, setTaskActionPrompt] = useState<TaskActionPrompt | null>(null);
+  const [awaitingFirstTurnReview, setAwaitingFirstTurnReview] = useState(false);
   const [newTripDestination, setNewTripDestination] = useState("");
   const [newTripKeepConsistentText, setNewTripKeepConsistentText] = useState("");
   const [newTripCarryStableProfile, setNewTripCarryStableProfile] = useState(true);
@@ -331,6 +395,15 @@ export default function App() {
       ),
     [concepts]
   );
+  const transferReviewStage = useMemo<TransferReviewStage>(() => {
+    const turnCount = Number((travelPlanState as any)?.source?.turnCount || 0);
+    const recommendationCount = motifTransferState?.recommendations?.length || 0;
+    if (recommendationCount > 0) return "ready";
+    if (awaitingFirstTurnReview) return "awaiting_first_turn_review";
+    if (turnCount <= 0) return "fresh_task";
+    if (turnCount === 1 && motifTransferState?.lastEvaluatedAt) return "no_transfer_match";
+    return "ready";
+  }, [awaitingFirstTurnReview, motifTransferState, travelPlanState]);
 
   // 中断上一次流（避免串台）
   const abortRef = useRef<AbortController | null>(null);
@@ -478,6 +551,8 @@ export default function App() {
     setNodeHoverFocus(null);
     setGraphGenerating(false);
     setModeCReferences([]);
+    setTaskActionPrompt(null);
+    setAwaitingFirstTurnReview(false);
   }
 
   function applyConversationPayload(payload: any) {
@@ -499,7 +574,18 @@ export default function App() {
     setCognitiveState(payloadCognitiveState(payload));
     setMotifTransferState(payloadMotifTransferState(payload));
     setPortfolioDocumentState(payloadPortfolioState(payload));
-    setTaskLifecycle(payloadTaskLifecycle(payload));
+    const nextLifecycle = payloadTaskLifecycle(payload);
+    setTaskLifecycle(nextLifecycle);
+    setTaskActionPrompt(
+      nextLifecycle?.status === "closed"
+        ? {
+            endedAt: nextLifecycle.endedAt,
+            endedTaskId: nextLifecycle.endedTaskId,
+            resumable: nextLifecycle.resumable !== false,
+          }
+        : null
+    );
+    setAwaitingFirstTurnReview(false);
     setConceptsDirty(false);
     setFlowHasUnsaved(false);
   }
@@ -535,6 +621,7 @@ export default function App() {
     setNewTripDestination("");
     setNewTripKeepConsistentText("");
     setNewTripCarryStableProfile(true);
+    setTaskActionPrompt(null);
     setNewTripModalOpen(true);
   }
 
@@ -550,11 +637,16 @@ export default function App() {
           id: makeId("task_end_already_closed"),
           role: "assistant",
           text: tr(
-            "当前任务已是结束状态。继续发送将自动开启新任务。",
-            "Current task is already closed. Sending a new message will automatically start a new task."
+            "当前任务已是结束状态。你可以恢复当前任务，或开启一个新任务。",
+            "The current task is already closed. Resume it or start a new task."
           ),
         },
       ]);
+      setTaskActionPrompt({
+        endedAt: taskLifecycle.endedAt,
+        endedTaskId: taskLifecycle.endedTaskId,
+        resumable: taskLifecycle.resumable !== false,
+      });
       return;
     }
     const hasMotifs = (motifs || []).length > 0;
@@ -571,6 +663,11 @@ export default function App() {
             const out = await api.confirmMotifLibrary(token, cid, [], { closeTask: true });
             applyConversationPayload(out);
             setModeCReferences([]);
+            setTaskActionPrompt({
+              endedAt: payloadTaskLifecycle(out)?.endedAt,
+              endedTaskId: payloadTaskLifecycle(out)?.endedTaskId,
+              resumable: payloadTaskLifecycle(out)?.resumable !== false,
+            });
             setMessages((prev) => [
               ...prev,
               {
@@ -639,7 +736,37 @@ export default function App() {
       applyConversationPayload(r);
       setNewTripModalOpen(false);
       setHistoryPanelOpen(false);
+      setTaskActionPrompt(null);
       refreshConversationHistory({ silent: true });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onResumeTask() {
+    if (!token || !cid) return;
+    setBusy(true);
+    try {
+      const out = await api.resumeTask(token, cid);
+      applyConversationPayload(out);
+      setTaskActionPrompt(null);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: makeId("task_resumed"),
+          role: "assistant",
+          text: tr("已恢复当前任务。你可以继续对话。", "Current task resumed. You can continue chatting."),
+        },
+      ]);
+    } catch (e: any) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: makeId("task_resume_err"),
+          role: "assistant",
+          text: `${tr("恢复任务失败", "Resume task failed")}: ${userFacingError(e, "恢复任务失败", "Resume task failed")}`,
+        },
+      ]);
     } finally {
       setBusy(false);
     }
@@ -691,6 +818,25 @@ export default function App() {
 
     const userText = text.trim();
     if (!userText) return;
+    if (taskLifecycle?.status === "closed") {
+      setTaskActionPrompt({
+        endedAt: taskLifecycle.endedAt,
+        endedTaskId: taskLifecycle.endedTaskId,
+        resumable: taskLifecycle.resumable !== false,
+      });
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: makeId("task_closed_guard"),
+          role: "assistant",
+          text: tr(
+            "当前任务已结束。请先恢复当前任务，或新建一个任务。",
+            "The current task is closed. Resume it first or start a new task."
+          ),
+        },
+      ]);
+      return;
+    }
     const manualReferences = modeCReferences.length
       ? modeCReferences.slice(0, 6).map((x) => ({
           motif_type_id: x.motifTypeId,
@@ -739,6 +885,9 @@ export default function App() {
       { id: userId, role: "user", text: userText },
       { id: assistantId, role: "assistant", text: "" },
     ]);
+    if (Number((travelPlanState as any)?.source?.turnCount || 0) === 0) {
+      setAwaitingFirstTurnReview(true);
+    }
 
     setBusy(true);
     setGraphGenerating(true);
@@ -789,11 +938,14 @@ export default function App() {
           setMotifTransferState(payloadMotifTransferState(out));
           setPortfolioDocumentState(payloadPortfolioState(out));
           setTaskLifecycle(payloadTaskLifecycle(out));
+          setTaskActionPrompt(null);
+          setAwaitingFirstTurnReview(false);
           refreshConversationHistory({ silent: true });
         },
 
         onError: (err: TurnStreamErrorData) => {
           if (ac.signal.aborted) return;
+          setAwaitingFirstTurnReview(false);
           setMessages((prev) =>
               prev.map((msg) =>
                   msg.id === assistantId
@@ -805,10 +957,23 @@ export default function App() {
       }, manualReferences);
     } catch (e: any) {
       if (!ac.signal.aborted) {
+        const closedPrompt = parseTaskClosedPrompt(e);
+        if (closedPrompt) {
+          setTaskActionPrompt(closedPrompt);
+        }
+        setAwaitingFirstTurnReview(false);
         setMessages((prev) =>
             prev.map((msg) =>
                 msg.id === assistantId
-                    ? { ...msg, text: `${tr("请求失败", "Request failed")}: ${e?.message || String(e)}` }
+                    ? {
+                        ...msg,
+                        text: closedPrompt
+                            ? tr(
+                                "当前任务已结束。请选择恢复当前任务，或新建一个任务。",
+                                "The current task is closed. Resume it or start a new task."
+                              )
+                            : `${tr("请求失败", "Request failed")}: ${e?.message || String(e)}`,
+                      }
                     : msg
             )
         );
@@ -935,9 +1100,10 @@ export default function App() {
     }>
   ) {
     if (!token || !cid) return;
+    const normalizedSelections = mergeSummarySelectionsByMotifType(selections);
     setBusy(true);
     try {
-      const out = await api.confirmMotifLibrary(token, cid, selections, {
+      const out = await api.confirmMotifLibrary(token, cid, normalizedSelections, {
         closeTask: pendingTaskEndAction === "end_task",
       });
       applyConversationPayload(out);
@@ -950,6 +1116,11 @@ export default function App() {
         openNewTravelPlanningModalDirect();
       } else if (next === "end_task") {
         setModeCReferences([]);
+        setTaskActionPrompt({
+          endedAt: payloadTaskLifecycle(out)?.endedAt,
+          endedTaskId: payloadTaskLifecycle(out)?.endedTaskId,
+          resumable: payloadTaskLifecycle(out)?.resumable !== false,
+        });
         setMessages((prev) => [
           ...prev,
           {
@@ -1550,6 +1721,9 @@ export default function App() {
                         motifTypeId,
                       })
                     }
+                    taskActionPrompt={taskActionPrompt}
+                    onResumeTask={onResumeTask}
+                    onStartNewTask={() => openNewTravelPlanningModalDirect()}
                 />
               </div>
               <div className="LeftStack__plan">
@@ -1573,6 +1747,7 @@ export default function App() {
                   concepts={conceptsView}
                   motifs={motifs}
                   motifTransferState={motifTransferState}
+                  transferReviewStage={transferReviewStage}
                   motifLibrary={cognitiveState?.motif_library || []}
                   contexts={contexts}
                   activeConceptId={activeConceptId}

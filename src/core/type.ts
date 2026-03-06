@@ -116,6 +116,13 @@ export type TaskDetection = {
     reason: string;
     signals: string[];
     mode: "single_conversation" | "new_task_detected";
+    confidence: number;
+    switch_reason_code:
+        | "closed_task"
+        | "new_conversation"
+        | "explicit_restart"
+        | "destination_switch"
+        | "continuous";
 };
 
 export type CognitiveStateConcept = {
@@ -212,6 +219,8 @@ export type TaskLifecycleState = {
     endedTaskId?: string;
     reopenedAt?: string;
     updatedAt?: string;
+    resumable?: boolean;
+    resume_required?: boolean;
 };
 
 export type CognitiveState = {

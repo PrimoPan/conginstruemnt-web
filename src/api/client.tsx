@@ -180,6 +180,40 @@ function formatHttpErrorMessage(res: Response, rawText: string): string {
     return `${statusLine}: ${oneLine}`;
 }
 
+export class ApiHttpError extends Error {
+    status: number;
+    code?: string;
+    data?: any;
+
+    constructor(message: string, status: number, data?: any, code?: string) {
+        super(message);
+        this.name = "ApiHttpError";
+        this.status = status;
+        this.code = code;
+        this.data = data;
+    }
+}
+
+function buildHttpError(res: Response, rawText: string): ApiHttpError {
+    const text = String(rawText || "").trim();
+    let parsed: any = null;
+    try {
+        parsed = text ? JSON.parse(text) : null;
+    } catch {
+        parsed = null;
+    }
+    const code =
+        parsed && typeof parsed === "object"
+            ? cleanErrorText((parsed as any).error || (parsed as any).code, 80) || undefined
+            : undefined;
+    return new ApiHttpError(
+        formatHttpErrorMessage(res, rawText),
+        Number(res.status || 0),
+        parsed && typeof parsed === "object" ? parsed : undefined,
+        code
+    );
+}
+
 function withAuthHeaders(opts: RequestInit = {}, token?: string): HeadersInit {
     const headers: Record<string, string> = {
         "Content-Type": "application/json",
@@ -246,17 +280,17 @@ async function http<T>(path: string, opts: RequestInit = {}, token?: string): Pr
 
     if (!res.ok) {
         const text = await res.text().catch(() => "");
-        throw new Error(formatHttpErrorMessage(res, text));
+        throw buildHttpError(res, text);
     }
     if (!isJsonLikeResponse(res)) {
         const text = await res.text().catch(() => "");
-        throw new Error(formatHttpErrorMessage(res, text || "unexpected non-json response"));
+        throw buildHttpError(res, text || "unexpected non-json response");
     }
     try {
         return (await res.json()) as T;
     } catch {
         const text = await res.text().catch(() => "");
-        throw new Error(formatHttpErrorMessage(res, text || "malformed json response"));
+        throw buildHttpError(res, text || "malformed json response");
     }
 }
 
@@ -427,7 +461,7 @@ async function postTurnStream(params: {
 
     if (!res.ok) {
         const text = await res.text().catch(() => "");
-        throw new Error(formatHttpErrorMessage(res, text));
+        throw buildHttpError(res, text);
     }
     if (!res.body) throw new Error("No response body (SSE stream not available)");
 
@@ -515,6 +549,15 @@ export const api = {
 
     getConversation: (token: string, cid: string) =>
         http<ConversationDetail>(`/api/conversations/${cid}`, {}, token),
+
+    resumeTask: (token: string, cid: string) =>
+        http<ConversationDetail>(
+            `/api/conversations/${cid}/task/resume`,
+            {
+                method: "POST",
+            },
+            token
+        ),
 
     saveGraph: (
         token: string,
