@@ -30,6 +30,11 @@ const API_BASE_STORAGE_KEY = "cg.apiBase";
 const ENV_BASES_RAW =
     process.env.REACT_APP_API_BASE_URLS || process.env.REACT_APP_API_BASE_URL || "";
 
+type RuntimeBasePreference = {
+    base: string;
+    source: "query" | "storage" | "none";
+};
+
 function normalizeBase(base: string): string {
     const trimmed = String(base || "").trim();
     if (!trimmed || trimmed === "/") return "";
@@ -47,24 +52,27 @@ function parseEnvBases(raw: string): string[] {
     );
 }
 
-function readRuntimePreferredBase(): string {
-    if (typeof window === "undefined") return "";
+function readRuntimePreferredBase(): RuntimeBasePreference {
+    if (typeof window === "undefined") return { base: "", source: "none" };
     try {
         const qs = new URLSearchParams(window.location.search);
         const fromQueryRaw = String(qs.get("apiBase") || "").trim();
         if (fromQueryRaw.toLowerCase() === "auto") {
             window.localStorage.removeItem(API_BASE_STORAGE_KEY);
-            return "";
+            return { base: "", source: "none" };
         }
 
         const fromQuery = normalizeBase(fromQueryRaw);
         if (fromQuery) {
             window.localStorage.setItem(API_BASE_STORAGE_KEY, fromQuery);
-            return fromQuery;
+            return { base: fromQuery, source: "query" };
         }
-        return normalizeBase(window.localStorage.getItem(API_BASE_STORAGE_KEY) || "");
+        return {
+            base: normalizeBase(window.localStorage.getItem(API_BASE_STORAGE_KEY) || ""),
+            source: window.localStorage.getItem(API_BASE_STORAGE_KEY) ? "storage" : "none",
+        };
     } catch {
-        return "";
+        return { base: "", source: "none" };
     }
 }
 
@@ -90,17 +98,24 @@ function rememberWorkingBase(base: string, ok: boolean) {
     }
 }
 
-function resolveApiBases(preferAbsolute = false): string[] {
+export function resolveApiBases(preferAbsolute = false): string[] {
     const envBases = parseEnvBases(ENV_BASES_RAW);
-    const runtimeBase = readRuntimePreferredBase();
+    const runtimePreference = readRuntimePreferredBase();
+    const runtimeBase = runtimePreference.base;
     const inferredHostBase = inferHostApiBase();
     const nonRelativeBases = [runtimeBase, inferredHostBase, ...envBases]
         .map(normalizeBase)
         .filter(Boolean)
         .filter((x, i, arr) => arr.indexOf(x) === i);
     if (preferAbsolute && nonRelativeBases.length) return nonRelativeBases;
-    const bases = [...nonRelativeBases, ""].filter((x, i, arr) => arr.indexOf(x) === i);
-    return bases.length ? bases : [""];
+    const bases =
+        runtimePreference.source === "query"
+            ? [runtimeBase, "", ...nonRelativeBases]
+            : ["", ...nonRelativeBases];
+    const deduped = bases
+        .map(normalizeBase)
+        .filter((x, i, arr) => arr.indexOf(x) === i);
+    return deduped.length ? deduped : [""];
 }
 
 function buildUrl(base: string, path: string) {
