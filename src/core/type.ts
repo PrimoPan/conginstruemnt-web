@@ -322,11 +322,24 @@ export type MotifInvariantReport = {
     coveredCausalEdges: number;
     uncoveredCausalEdges: number;
     repairedMotifCount: number;
+    repairRatio?: number;
     componentCount: number;
     excludedNonReasoningEdges?: number;
     excludedByReason?: Record<string, number>;
+    boundaryChecks?: number;
     llmValidatedEdges?: number;
     llmRejectedEdges?: number;
+    boundaryLlmCalls?: number;
+    highImpactEdges?: number;
+};
+
+export type AlgorithmPipelineSnapshot = {
+    version: "v3";
+    stages: Array<{
+        stage: string;
+        input_count?: number;
+        output_count?: number;
+    }>;
 };
 
 export type ConversationDetail = {
@@ -354,6 +367,8 @@ export type ConversationDetail = {
     motifTransferState?: MotifTransferState;
     portfolioDocumentState?: PortfolioDocumentState;
     taskLifecycle?: TaskLifecycleState;
+    algorithm_version?: "v3";
+    algorithm_pipeline?: AlgorithmPipelineSnapshot;
 };
 
 export type ConversationCreateResponse = ConversationDetail;
@@ -361,6 +376,8 @@ export type ConversationCreateResponse = ConversationDetail;
 export type GraphSaveResponse = {
     conversationId: string;
     locale?: AppLocale;
+    algorithm_version?: "v3";
+    algorithm_pipeline?: AlgorithmPipelineSnapshot;
     graph: CDG;
     concept_graph?: CDG;
     concepts?: ConceptItem[];
@@ -390,6 +407,8 @@ export type GraphSaveResponse = {
 export type ConceptSaveResponse = {
     conversationId: string;
     locale?: AppLocale;
+    algorithm_version?: "v3";
+    algorithm_pipeline?: AlgorithmPipelineSnapshot;
     graph: CDG;
     concept_graph?: CDG;
     concepts: ConceptItem[];
@@ -429,6 +448,8 @@ export type ConflictGatePayload = {
 
 export type TurnResponse = {
     assistantText: string;
+    algorithm_version?: "v3";
+    algorithm_pipeline?: AlgorithmPipelineSnapshot;
     graphPatch: GraphPatch;
     graph: CDG;
     concept_graph?: CDG;
@@ -578,6 +599,10 @@ export type ConceptItem = {
     locked: boolean;
     paused: boolean;
     updatedAt: string;
+    posterior?: number;
+    entropy?: number;
+    alias_group_id?: string;
+    support_sources?: string[];
 };
 
 export type ConceptMotifType = "pair" | "triad";
@@ -668,6 +693,10 @@ export type ConceptMotif = {
         confidence: number;
     }>;
     change_source?: MotifSilentChangeSource;
+    selection_score?: number;
+    uncertainty?: number;
+    state_transition_reason?: string;
+    support_count?: number;
 };
 
 export type MotifLinkType = "precedes" | "supports" | "conflicts_with" | "refines";
