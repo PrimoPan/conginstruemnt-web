@@ -1572,7 +1572,7 @@ export default function App() {
           const existing = (prevMotifs || []).slice();
           const pending: MotifLink[] = [];
           for (const m of existing) {
-            if (!m || m.status === "cancelled") continue;
+            if (!m || m.status === "cancelled" || m.status === "disabled") continue;
             const mSources = (m.conceptIds || []).filter((id) => id !== m.anchorConceptId);
             const mTarget = m.anchorConceptId;
             const shareConcept = (m.conceptIds || []).some((id) => conceptIds.includes(id));

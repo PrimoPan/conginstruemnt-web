@@ -844,9 +844,9 @@ const MotifNode = memo(function MotifNode({ data, selected }: NodeProps<Node<Mot
                     />
                 ))}
             </div>
-            <div className="MotifReasoningNode__refs">
-                {data.sourceRefs.length ? data.sourceRefs.join(" ") : tr(locale, "来源: n/a", "source: n/a")}
-            </div>
+            {data.sourceRefs.length ? (
+                <div className="MotifReasoningNode__refs">{data.sourceRefs.join(" ")}</div>
+            ) : null}
         </div>
     );
 });

@@ -324,11 +324,12 @@ export type MotifTransferDecisionResponse = TurnResponse & {
     decision: {
         id: string;
         candidate_id: string;
-        action: "adopt" | "modify" | "ignore";
-        decision_status: "pending" | "adopted" | "modified_pending_confirmation" | "ignored" | "revised";
+        action: "adopt" | "modify" | "ignore" | "confirm";
+        decision_status: "pending" | "pending_confirmation" | "adopted" | "ignored" | "revised";
         decided_at: string;
         revised_text?: string;
         note?: string;
+        application_scope?: "trip" | "local";
     };
     followupQuestion?: string;
     motifTransferState?: MotifTransferState;
