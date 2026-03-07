@@ -1265,10 +1265,11 @@ export default function App() {
 
   async function onTransferDecision(params: {
     candidateId: string;
-    action: "adopt" | "modify" | "ignore";
+    action: "adopt" | "modify" | "ignore" | "confirm";
     revisedText?: string;
     note?: string;
     modeOverride?: "A" | "B" | "C";
+    applicationScope?: "trip" | "local";
     recommendation?: {
       motif_type_id: string;
       motif_type_title: string;
@@ -1290,6 +1291,7 @@ export default function App() {
         revised_text: params.revisedText,
         note: params.note,
         mode_override: params.modeOverride,
+        application_scope: params.applicationScope,
         recommendation: params.recommendation,
       });
       applyConversationPayload(out);

@@ -659,10 +659,11 @@ export const api = {
         cid: string,
         payload: {
             candidate_id: string;
-            action: "adopt" | "modify" | "ignore";
+            action: "adopt" | "modify" | "ignore" | "confirm";
             revised_text?: string;
             note?: string;
             mode_override?: "A" | "B" | "C";
+            application_scope?: "trip" | "local";
             recommendation?: {
                 motif_type_id: string;
                 motif_type_title: string;
