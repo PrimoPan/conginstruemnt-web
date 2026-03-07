@@ -8,6 +8,7 @@ import type {
     ConceptMotif,
     EdgeType,
     MotifLink,
+    MotifLinkType,
     MotifReasoningView,
     NodeEvidenceFocus,
 } from "../core/type";
@@ -151,6 +152,16 @@ function resolveNodeTypeForRelation(relation: EdgeType, role: "source" | "target
     return "belief";
 }
 
+function newMotifLinkId() {
+    const uuid = (globalThis.crypto as any)?.randomUUID?.();
+    if (uuid) return `ml_manual_${uuid}`;
+    return `ml_manual_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+}
+
+function findMotifLink(links: MotifLink[], fromMotifId: string, toMotifId: string): MotifLink | null {
+    return links.find((link) => link.fromMotifId === fromMotifId && link.toMotifId === toMotifId) || null;
+}
+
 export type ManualMotifDraft = {
     sentence: string;
     sourceStatement: string;
@@ -187,6 +198,7 @@ export function FlowPanel(props: {
     onSelectMotif?: (motifId: string) => void;
     onSelectConcept?: (conceptId: string) => void;
     onCreateMotifDraft?: (draft: ManualMotifDraft) => void;
+    onMotifLinksChange?: (motifLinks: MotifLink[]) => void;
     onSaveGraph?: (
         graph: CDG,
         opts?: {
@@ -220,6 +232,7 @@ export function FlowPanel(props: {
         onSelectMotif,
         onSelectConcept,
         onCreateMotifDraft,
+        onMotifLinksChange,
         onSaveGraph,
         savingGraph,
         conceptPanelCollapsed,
@@ -243,6 +256,7 @@ export function FlowPanel(props: {
     });
     const [selectedNodeId, setSelectedNodeId] = useState<string>("");
     const [selectedEdgeId, setSelectedEdgeId] = useState<string>("");
+    const [selectedMotifLinkId, setSelectedMotifLinkId] = useState<string>("");
     const [saveError, setSaveError] = useState("");
     const [motifComposerOpen, setMotifComposerOpen] = useState(false);
     const [motifSentence, setMotifSentence] = useState("");
@@ -294,6 +308,7 @@ export function FlowPanel(props: {
         setDirty(nextDirty);
         setSelectedNodeId("");
         setSelectedEdgeId("");
+        setSelectedMotifLinkId("");
         setSaveError("");
         setMotifComposerOpen(false);
         setMotifSentence("");
@@ -333,6 +348,18 @@ export function FlowPanel(props: {
             setMotifComposerError("");
         }
     }, [canvasMode, motifComposerOpen]);
+
+    useEffect(() => {
+        if (canvasView === "concept" && selectedMotifLinkId) {
+            setSelectedMotifLinkId("");
+        }
+    }, [canvasView, selectedMotifLinkId]);
+
+    useEffect(() => {
+        if (!selectedMotifLinkId) return;
+        const exists = (motifLinks || []).some((link) => link.id === selectedMotifLinkId);
+        if (!exists) setSelectedMotifLinkId("");
+    }, [motifLinks, selectedMotifLinkId]);
 
     const updateDraftGraph = useCallback((updater: (prev: CDG) => CDG) => {
         setDraftGraph((prev) => {
@@ -398,6 +425,20 @@ export function FlowPanel(props: {
         () => (draftGraph.edges || []).find((e) => e.id === selectedEdgeId) || null,
         [draftGraph.edges, selectedEdgeId]
     );
+    const selectedMotifLink = useMemo(
+        () => (motifLinks || []).find((link) => link.id === selectedMotifLinkId) || null,
+        [motifLinks, selectedMotifLinkId]
+    );
+    const motifTitleById = useMemo(() => {
+        const out = new Map<string, string>();
+        for (const motif of motifs || []) {
+            out.set(
+                motif.id,
+                cleanText(motif.display_title, 120) || cleanText(motif.title, 120) || cleanText(motif.templateKey, 80) || motif.id
+            );
+        }
+        return out;
+    }, [motifs]);
 
     const patchEdgeType = useCallback(
         (edgeId: string, edgeType: EdgeType) => {
@@ -453,6 +494,71 @@ export function FlowPanel(props: {
             setSelectedNodeId("");
         },
         [canvasMode, updateDraftGraph]
+    );
+
+    const updateMotifLinks = useCallback(
+        (updater: (prev: MotifLink[]) => MotifLink[]) => {
+            const next = updater((motifLinks || []).slice());
+            onMotifLinksChange?.(next);
+        },
+        [motifLinks, onMotifLinksChange]
+    );
+
+    const createMotifLink = useCallback(
+        (fromMotifId: string, toMotifId: string) => {
+            if (canvasMode !== "edit") return;
+            const fromId = cleanText(fromMotifId, 120);
+            const toId = cleanText(toMotifId, 120);
+            if (!fromId || !toId || fromId === toId) return;
+            const existing = findMotifLink(motifLinks || [], fromId, toId);
+            if (existing) {
+                setSelectedMotifLinkId(existing.id);
+                return;
+            }
+            const id = newMotifLinkId();
+            const nextLink: MotifLink = {
+                id,
+                fromMotifId: fromId,
+                toMotifId: toId,
+                type: "supports",
+                confidence: 0.74,
+                source: "user",
+                updatedAt: new Date().toISOString(),
+            };
+            updateMotifLinks((prev) => [...prev, nextLink]);
+            setSelectedMotifLinkId(id);
+            setSelectedNodeId("");
+            setSelectedEdgeId("");
+        },
+        [canvasMode, motifLinks, updateMotifLinks]
+    );
+
+    const patchMotifLinkType = useCallback(
+        (linkId: string, type: MotifLinkType) => {
+            if (canvasMode !== "edit" || !linkId) return;
+            updateMotifLinks((prev) =>
+                prev.map((link) =>
+                    link.id === linkId
+                        ? {
+                              ...link,
+                              type,
+                              source: "user",
+                              updatedAt: new Date().toISOString(),
+                          }
+                        : link
+                )
+            );
+        },
+        [canvasMode, updateMotifLinks]
+    );
+
+    const deleteMotifLink = useCallback(
+        (linkId: string) => {
+            if (canvasMode !== "edit" || !linkId) return;
+            updateMotifLinks((prev) => prev.filter((link) => link.id !== linkId));
+            setSelectedMotifLinkId("");
+        },
+        [canvasMode, updateMotifLinks]
     );
 
     const deleteNode = useCallback(
@@ -883,15 +989,78 @@ export function FlowPanel(props: {
                                 {motifComposerError ? <div className="FlowInspector__error">{motifComposerError}</div> : null}
                             </div>
                         ) : null}
+                        {canvasMode === "edit" ? (
+                            <div className="MotifLinkInspector">
+                                <div className="FlowInspector__title">
+                                    {selectedMotifLink
+                                        ? tr("编辑 Motif 关系", "Edit Motif Link")
+                                        : tr("Motif 关系编辑", "Motif Link Editor")}
+                                </div>
+                                {selectedMotifLink ? (
+                                    <>
+                                        <div className="MotifLinkInspector__summary">
+                                            <span>{motifTitleById.get(selectedMotifLink.fromMotifId) || selectedMotifLink.fromMotifId}</span>
+                                            <span className="MotifLinkInspector__arrow">→</span>
+                                            <span>{motifTitleById.get(selectedMotifLink.toMotifId) || selectedMotifLink.toMotifId}</span>
+                                        </div>
+                                        <label className="FlowInspector__fieldLabel">
+                                            {tr("关系类型", "Relationship")}
+                                            <select
+                                                className="FlowInspector__input"
+                                                value={selectedMotifLink.type}
+                                                onChange={(e) => patchMotifLinkType(selectedMotifLink.id, e.target.value as MotifLinkType)}
+                                            >
+                                                <option value="supports">{tr("支持", "supports")}</option>
+                                                <option value="precedes">{tr("前置", "precedes")}</option>
+                                                <option value="refines">{tr("细化", "refines")}</option>
+                                                <option value="conflicts_with">{tr("冲突", "conflicts_with")}</option>
+                                            </select>
+                                        </label>
+                                        <div className="ConceptEditor__actions">
+                                            <button
+                                                type="button"
+                                                className="Btn FlowToolbar__btn"
+                                                onClick={() => setSelectedMotifLinkId("")}
+                                            >
+                                                {tr("取消选择", "Clear selection")}
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className="Btn FlowToolbar__btn Btn--danger"
+                                                onClick={() => deleteMotifLink(selectedMotifLink.id)}
+                                            >
+                                                {tr("删除关系", "Delete link")}
+                                            </button>
+                                        </div>
+                                    </>
+                                ) : (
+                                    <div className="MotifLinkInspector__hint">
+                                        {tr(
+                                            "从一个 motif 节点的右侧拖到另一个 motif 节点，创建新的依赖边；点击已有边后可修改类型或删除。",
+                                            "Drag from one motif handle to another to create a link. Click an existing link to change its type or delete it."
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        ) : null}
                         <MotifReasoningCanvas
                             locale={locale}
                             motifs={motifs || []}
                             motifLinks={motifLinks || []}
                             concepts={concepts || []}
                             reasoningView={motifReasoningView}
+                            canvasMode={canvasMode}
                             activeMotifId={activeMotifId}
+                            selectedLinkId={selectedMotifLinkId}
                             onSelectMotif={onSelectMotif}
                             onSelectConcept={onSelectConcept}
+                            onConnectLink={createMotifLink}
+                            onSelectLink={(linkId) => {
+                                setSelectedMotifLinkId(linkId);
+                                setSelectedNodeId("");
+                                setSelectedEdgeId("");
+                            }}
+                            onPaneClick={() => setSelectedMotifLinkId("")}
                         />
                         {saveError ? <div className="FlowToolbar__error">{saveError}</div> : null}
                     </>

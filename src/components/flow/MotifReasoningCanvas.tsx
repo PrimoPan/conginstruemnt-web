@@ -859,11 +859,17 @@ export function MotifReasoningCanvas(props: {
     motifLinks: MotifLink[];
     concepts: ConceptItem[];
     reasoningView?: MotifReasoningView;
+    canvasMode?: "view" | "edit";
     activeMotifId?: string;
+    selectedLinkId?: string;
     onSelectMotif?: (motifId: string) => void;
     onSelectConcept?: (conceptId: string) => void;
+    onSelectLink?: (linkId: string) => void;
+    onConnectLink?: (fromMotifId: string, toMotifId: string) => void;
+    onPaneClick?: () => void;
 }) {
     const en = props.locale === "en-US";
+    const editable = props.canvasMode === "edit";
     const [stepsCollapsed, setStepsCollapsed] = useState(false);
     const positionCacheRef = useRef<Map<string, Point>>(new Map());
     const conceptById = useMemo(
@@ -880,7 +886,7 @@ export function MotifReasoningCanvas(props: {
             (props.motifs || []).map((motif) => [motif.id, cleanText(motif.display_title, 160) || cleanText(motif.title, 160)])
         );
         const serverView = props.reasoningView;
-        const hasServerView = Array.isArray(serverView?.nodes) && (serverView?.nodes?.length || 0) > 0;
+        const hasServerView = !editable && Array.isArray(serverView?.nodes) && (serverView?.nodes?.length || 0) > 0;
         if (hasServerView && serverView) {
             return {
                 ...serverView,
@@ -904,7 +910,7 @@ export function MotifReasoningCanvas(props: {
             concepts: props.concepts || [],
             locale: props.locale,
         });
-    }, [props.reasoningView, props.motifs, props.motifLinks, props.concepts, props.locale]);
+    }, [editable, props.reasoningView, props.motifs, props.motifLinks, props.concepts, props.locale]);
 
     const { nodes: layoutNodes, edges, steps } = useMemo(
         () => layoutReasoningGraph(resolvedView, props.locale, conceptById, conceptNoById),
@@ -918,6 +924,10 @@ export function MotifReasoningCanvas(props: {
         () => new Map((resolvedView?.nodes || []).map((n) => [n.motifId, n])),
         [resolvedView]
     );
+    const motifIdByNodeId = useMemo(
+        () => new Map((resolvedView?.nodes || []).map((node) => [node.id, node.motifId])),
+        [resolvedView]
+    );
     const renderedNodes = useMemo(
         () =>
             stabilizeNodePositions({
@@ -928,6 +938,24 @@ export function MotifReasoningCanvas(props: {
                 selected: !!props.activeMotifId && n.data.motifId === props.activeMotifId,
             })),
         [layoutNodes, props.activeMotifId]
+    );
+    const renderedEdges = useMemo(
+        () =>
+            edges.map((edge) => {
+                if (edge.id !== props.selectedLinkId) return edge;
+                const baseStyle = edge.style || {};
+                return {
+                    ...edge,
+                    selected: true,
+                    style: {
+                        ...baseStyle,
+                        strokeWidth: Math.max(Number((baseStyle as any)?.strokeWidth) || 1.8, 3.4),
+                        stroke: "rgba(15, 118, 110, 0.95)",
+                    },
+                    labelBgStyle: { fill: "rgba(209, 250, 229, 0.96)", fillOpacity: 0.96 },
+                };
+            }),
+        [edges, props.selectedLinkId]
     );
 
     return (
@@ -941,17 +969,34 @@ export function MotifReasoningCanvas(props: {
             ) : null}
             <ReactFlow
                 nodes={renderedNodes}
-                edges={edges}
+                edges={renderedEdges}
                 nodeTypes={nodeTypes}
                 fitView
                 fitViewOptions={{ padding: 0.22, duration: 260 }}
                 panOnDrag
                 nodesDraggable={false}
-                nodesConnectable={false}
+                nodesConnectable={editable}
                 elementsSelectable
                 onNodeClick={(_, node) => {
+                    props.onSelectLink?.("");
                     const motifId = node.data?.motifId || "";
                     if (motifId) props.onSelectMotif?.(motifId);
+                }}
+                onEdgeClick={(event, edge) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    props.onSelectLink?.(edge.id);
+                }}
+                onConnect={(connection) => {
+                    if (!editable) return;
+                    const fromMotifId = motifIdByNodeId.get(String(connection.source || "")) || "";
+                    const toMotifId = motifIdByNodeId.get(String(connection.target || "")) || "";
+                    if (!fromMotifId || !toMotifId || fromMotifId === toMotifId) return;
+                    props.onConnectLink?.(fromMotifId, toMotifId);
+                }}
+                onPaneClick={() => {
+                    props.onSelectLink?.("");
+                    props.onPaneClick?.();
                 }}
                 proOptions={{ hideAttribution: true }}
             >

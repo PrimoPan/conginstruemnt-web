@@ -10,6 +10,7 @@ const mockOnNodesChange = jest.fn();
 const mockOnEdgesChange = jest.fn();
 let latestCanvasProps: any = null;
 let latestInspectorProps: any = null;
+let latestMotifCanvasProps: any = null;
 
 jest.mock("./flow/FlowCanvas", () => ({
     FlowCanvas: (props: any) => {
@@ -70,7 +71,27 @@ jest.mock("./flow/FlowInspector", () => ({
 }));
 
 jest.mock("./flow/MotifReasoningCanvas", () => ({
-    MotifReasoningCanvas: () => <div data-testid="mock-motif-canvas" />,
+    MotifReasoningCanvas: (props: any) => {
+        latestMotifCanvasProps = props;
+        return (
+            <div data-testid="mock-motif-canvas">
+                <button
+                    type="button"
+                    data-testid="mock-connect-motif-link"
+                    onClick={() => props.onConnectLink?.("m1", "m2")}
+                >
+                    connect-motif
+                </button>
+                <button
+                    type="button"
+                    data-testid="mock-select-motif-link"
+                    onClick={() => props.onSelectLink?.("ml_existing")}
+                >
+                    select-motif-link
+                </button>
+            </div>
+        );
+    },
 }));
 
 function baseGraph(): CDG {
@@ -128,6 +149,59 @@ function graphWithTwoNodes(edges: CDG["edges"] = []): CDG {
     };
 }
 
+function baseMotifs() {
+    return [
+        {
+            id: "m1",
+            motif_id: "m1",
+            motif_type: "enable",
+            motifType: "pair",
+            templateKey: "pair",
+            relation: "enable",
+            dependencyClass: "enable",
+            conceptIds: ["c1", "c2"],
+            anchorConceptId: "c2",
+            title: "携家出游 supports 儿童友好选项",
+            display_title: "携家出游会优先考虑儿童友好选项",
+            description: "",
+            confidence: 0.82,
+            supportEdgeIds: [],
+            supportNodeIds: [],
+            status: "active",
+            novelty: "new",
+            updatedAt: "2026-03-07T00:00:00.000Z",
+            aliases: [],
+            concept_bindings: ["c1", "c2"],
+            scope: "global",
+            roles: { sources: ["c1"], target: "c2" },
+        },
+        {
+            id: "m2",
+            motif_id: "m2",
+            motif_type: "constraint",
+            motifType: "pair",
+            templateKey: "pair",
+            relation: "constraint",
+            dependencyClass: "constraint",
+            conceptIds: ["c2", "c3"],
+            anchorConceptId: "c3",
+            title: "儿童友好选项 constrains 住宿筛选",
+            display_title: "儿童友好诉求会限制住宿筛选",
+            description: "",
+            confidence: 0.78,
+            supportEdgeIds: [],
+            supportNodeIds: [],
+            status: "active",
+            novelty: "new",
+            updatedAt: "2026-03-07T00:00:00.000Z",
+            aliases: [],
+            concept_bindings: ["c2", "c3"],
+            scope: "global",
+            roles: { sources: ["c2"], target: "c3" },
+        },
+    ] as any[];
+}
+
 beforeEach(() => {
     localStorage.clear();
     useCanvasDraftStore.getState().clearAllDrafts();
@@ -137,6 +211,7 @@ beforeEach(() => {
     mockOnEdgesChange.mockClear();
     latestCanvasProps = null;
     latestInspectorProps = null;
+    latestMotifCanvasProps = null;
 });
 
 function enterEditMode() {
@@ -401,4 +476,116 @@ test("view mode should keep graph read only until the user switches to edit mode
 
     enterEditMode();
     expect(screen.getByRole("button", { name: "+ 新增节点" })).toBeEnabled();
+});
+
+test("motif edit mode should create a user motif link from canvas connect", async () => {
+    const onMotifLinksChange = jest.fn();
+
+    render(
+        <FlowPanel
+            conversationId="cid_motif_link"
+            locale="zh-CN"
+            graph={graphWithTwoNodes()}
+            concepts={[]}
+            motifs={baseMotifs() as any}
+            motifLinks={[]}
+            motifReasoningView={{ nodes: [], edges: [], steps: [] }}
+            activeConceptId=""
+            activeMotifId=""
+            generatingGraph={false}
+            onNodeEvidenceHover={() => {}}
+            onSelectMotif={() => {}}
+            onSelectConcept={() => {}}
+            onMotifLinksChange={onMotifLinksChange}
+            onSaveGraph={jest.fn()}
+            savingGraph={false}
+            extraDirty={false}
+            focusNodeId=""
+            onFocusNodeHandled={() => {}}
+            onDraftGraphChange={() => {}}
+            conceptPanelCollapsed={false}
+            onToggleConceptPanel={() => {}}
+        />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Motif 推理" }));
+    enterEditMode();
+    expect(latestMotifCanvasProps?.canvasMode).toBe("edit");
+
+    fireEvent.click(screen.getByTestId("mock-connect-motif-link"));
+
+    await waitFor(() => expect(onMotifLinksChange).toHaveBeenCalledTimes(1));
+    const nextLinks = onMotifLinksChange.mock.calls[0][0] as any[];
+    expect(nextLinks).toHaveLength(1);
+    expect(nextLinks[0]).toEqual(
+        expect.objectContaining({
+            fromMotifId: "m1",
+            toMotifId: "m2",
+            type: "supports",
+            source: "user",
+        })
+    );
+});
+
+test("motif edit mode should update and delete a selected motif link", async () => {
+    const onMotifLinksChange = jest.fn();
+
+    render(
+        <FlowPanel
+            conversationId="cid_motif_link_edit"
+            locale="zh-CN"
+            graph={graphWithTwoNodes()}
+            concepts={[]}
+            motifs={baseMotifs() as any}
+            motifLinks={[
+                {
+                    id: "ml_existing",
+                    fromMotifId: "m1",
+                    toMotifId: "m2",
+                    type: "supports",
+                    confidence: 0.76,
+                    source: "user",
+                    updatedAt: "2026-03-07T00:00:00.000Z",
+                },
+            ]}
+            motifReasoningView={{ nodes: [], edges: [], steps: [] }}
+            activeConceptId=""
+            activeMotifId=""
+            generatingGraph={false}
+            onNodeEvidenceHover={() => {}}
+            onSelectMotif={() => {}}
+            onSelectConcept={() => {}}
+            onMotifLinksChange={onMotifLinksChange}
+            onSaveGraph={jest.fn()}
+            savingGraph={false}
+            extraDirty={false}
+            focusNodeId=""
+            onFocusNodeHandled={() => {}}
+            onDraftGraphChange={() => {}}
+            conceptPanelCollapsed={false}
+            onToggleConceptPanel={() => {}}
+        />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Motif 推理" }));
+    enterEditMode();
+    fireEvent.click(screen.getByTestId("mock-select-motif-link"));
+
+    await waitFor(() => expect(screen.getByLabelText("关系类型")).toHaveValue("supports"));
+
+    fireEvent.change(screen.getByLabelText("关系类型"), { target: { value: "refines" } });
+    await waitFor(() =>
+        expect(onMotifLinksChange).toHaveBeenCalledWith([
+            expect.objectContaining({
+                id: "ml_existing",
+                type: "refines",
+            }),
+        ])
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "删除关系" }));
+    await waitFor(() => {
+        const lastCall = onMotifLinksChange.mock.calls[onMotifLinksChange.mock.calls.length - 1][0] as any[];
+        expect(lastCall).toHaveLength(0);
+    });
 });

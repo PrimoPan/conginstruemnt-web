@@ -1947,10 +1947,15 @@ export default function App() {
                 onSelectConcept={(conceptId) => {
                   setActiveConceptId(conceptId);
                 }}
+                onMotifLinksChange={(nextLinks) => {
+                  setMotifLinks(nextLinks);
+                  setMotifReasoningView(emptyMotifReasoningView);
+                  setFlowHasUnsaved(true);
+                }}
                 onCreateMotifDraft={onCreateMotifDraft}
                 onSaveGraph={onSaveGraph}
                 savingGraph={savingGraph}
-                extraDirty={conceptsDirty}
+                extraDirty={flowHasUnsaved || conceptsDirty}
                 focusNodeId={focusNodeId}
                 onFocusNodeHandled={() => setFocusNodeId("")}
                 onDraftGraphChange={setDraftGraphPreview}
