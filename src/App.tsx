@@ -296,6 +296,13 @@ function payloadTravelPlanState(payload: any): TravelPlanState | null {
   return x as TravelPlanState;
 }
 
+function payloadTransferRecommendationsEnabled(payload: any, fallback = false): boolean {
+  if (typeof payload?.transferRecommendationsEnabled === "boolean") {
+    return payload.transferRecommendationsEnabled;
+  }
+  return fallback;
+}
+
 function payloadTaskLifecycle(payload: any): TaskLifecycleState | null {
   const x = payload?.taskLifecycle;
   if (!x || typeof x !== "object") return null;
@@ -355,6 +362,7 @@ export default function App() {
   const [motifTransferState, setMotifTransferState] = useState<MotifTransferState | null>(null);
   const [portfolioDocumentState, setPortfolioDocumentState] = useState<PortfolioDocumentState | null>(null);
   const [taskLifecycle, setTaskLifecycle] = useState<TaskLifecycleState | null>(null);
+  const [transferRecommendationsEnabled, setTransferRecommendationsEnabled] = useState(false);
   const [conceptsDirty, setConceptsDirty] = useState(false);
   const [activeConceptId, setActiveConceptId] = useState<string>("");
   const [activeMotifId, setActiveMotifId] = useState<string>("");
@@ -414,7 +422,8 @@ export default function App() {
       ),
     [concepts]
   );
-  const transferReviewStage = useMemo<TransferReviewStage>(() => {
+  const transferReviewStage = useMemo<TransferReviewStage | null>(() => {
+    if (!transferRecommendationsEnabled) return null;
     const turnCount = Number((travelPlanState as any)?.source?.turnCount || 0);
     const recommendationCount = motifTransferState?.recommendations?.length || 0;
     if (recommendationCount > 0) return "ready";
@@ -422,7 +431,7 @@ export default function App() {
     if (turnCount <= 0) return "fresh_task";
     if (turnCount === 1 && motifTransferState?.lastEvaluatedAt) return "no_transfer_match";
     return "ready";
-  }, [awaitingFirstTurnReview, motifTransferState, travelPlanState]);
+  }, [awaitingFirstTurnReview, motifTransferState, transferRecommendationsEnabled, travelPlanState]);
 
   // 中断上一次流（避免串台）
   const abortRef = useRef<AbortController | null>(null);
@@ -471,6 +480,7 @@ export default function App() {
         setPortfolioDocumentState(payloadPortfolioState(conv));
         const nextLifecycle = payloadTaskLifecycle(conv);
         setTaskLifecycle(nextLifecycle);
+        setTransferRecommendationsEnabled(payloadTransferRecommendationsEnabled(conv));
         setTaskActionPrompt(taskActionPromptFromLifecycle(nextLifecycle));
         setConceptsDirty(false);
         setFlowHasUnsaved(false);
@@ -616,6 +626,7 @@ export default function App() {
     setMotifTransferState(null);
     setPortfolioDocumentState(null);
     setTaskLifecycle(null);
+    setTransferRecommendationsEnabled(false);
     setConceptsDirty(false);
     setFlowHasUnsaved(false);
     setActiveConceptId("");
@@ -652,6 +663,7 @@ export default function App() {
     setPortfolioDocumentState(payloadPortfolioState(payload));
     const nextLifecycle = payloadTaskLifecycle(payload);
     setTaskLifecycle(nextLifecycle);
+    setTransferRecommendationsEnabled((current) => payloadTransferRecommendationsEnabled(payload, current));
     setTaskActionPrompt(taskActionPromptFromLifecycle(nextLifecycle));
     setAwaitingFirstTurnReview(false);
     setConceptsDirty(false);
@@ -676,6 +688,7 @@ export default function App() {
         setConversationLocale(r.locale);
       }
       applyConversationPayload(r);
+      setTransferRecommendationsEnabled(false);
       setHistoryPanelOpen(false);
       refreshConversationHistory({ silent: true });
     } catch (e: any) {
@@ -818,6 +831,7 @@ export default function App() {
         setConversationLocale(r.locale);
       }
       applyConversationPayload(r);
+      setTransferRecommendationsEnabled(true);
       setNewTripModalOpen(false);
       setHistoryPanelOpen(false);
       setTaskActionPrompt(null);
@@ -1848,6 +1862,7 @@ export default function App() {
                   concepts={conceptsView}
                   motifs={motifs}
                   motifTransferState={motifTransferState}
+                  transferRecommendationsEnabled={transferRecommendationsEnabled}
                   transferReviewStage={transferReviewStage}
                   motifLibrary={cognitiveState?.motif_library || []}
                   contexts={contexts}

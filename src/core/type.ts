@@ -355,6 +355,7 @@ export type ConversationDetail = {
     conversationId: string;
     title: string;
     locale?: AppLocale;
+    transferRecommendationsEnabled?: boolean;
     systemPrompt: string;
     graph: CDG;
     concept_graph?: CDG;
@@ -385,6 +386,7 @@ export type ConversationCreateResponse = ConversationDetail;
 export type GraphSaveResponse = {
     conversationId: string;
     locale?: AppLocale;
+    transferRecommendationsEnabled?: boolean;
     algorithm_version?: "v3";
     algorithm_pipeline?: AlgorithmPipelineSnapshot;
     graph: CDG;
@@ -416,6 +418,7 @@ export type GraphSaveResponse = {
 export type ConceptSaveResponse = {
     conversationId: string;
     locale?: AppLocale;
+    transferRecommendationsEnabled?: boolean;
     algorithm_version?: "v3";
     algorithm_pipeline?: AlgorithmPipelineSnapshot;
     graph: CDG;
@@ -457,6 +460,7 @@ export type ConflictGatePayload = {
 
 export type TurnResponse = {
     assistantText: string;
+    transferRecommendationsEnabled?: boolean;
     algorithm_version?: "v3";
     algorithm_pipeline?: AlgorithmPipelineSnapshot;
     graphPatch: GraphPatch;

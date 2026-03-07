@@ -160,7 +160,8 @@ export function ConceptPanel(props: {
     concepts: ConceptItem[];
     motifs: ConceptMotif[];
     motifTransferState?: MotifTransferState | null;
-    transferReviewStage?: "ready" | "fresh_task" | "awaiting_first_turn_review" | "no_transfer_match";
+    transferRecommendationsEnabled?: boolean;
+    transferReviewStage?: "ready" | "fresh_task" | "awaiting_first_turn_review" | "no_transfer_match" | null;
     motifLibrary?: MotifLibraryEntry[];
     contexts?: ContextItem[];
     activeConceptId?: string;
@@ -229,6 +230,7 @@ export function ConceptPanel(props: {
         concepts,
         motifs,
         motifTransferState,
+        transferRecommendationsEnabled,
         transferReviewStage,
         motifLibrary,
         contexts,
@@ -532,7 +534,11 @@ export function ConceptPanel(props: {
                     <div className="ConceptPanel__empty">{tr(locale, "当前还没有可用 motif。", "No motifs yet.")}</div>
                 ) : null}
 
-                {tab === "motif" && !transferRecommendations.length && transferReviewStage && transferReviewStage !== "ready" ? (
+                {transferRecommendationsEnabled &&
+                tab === "motif" &&
+                !transferRecommendations.length &&
+                transferReviewStage &&
+                transferReviewStage !== "ready" ? (
                     <div className="TransferSuggestions">
                         <div className="TransferSuggestions__title">
                             {tr(locale, "来自上次任务的建议", "Suggested from previous tasks")}
@@ -559,7 +565,7 @@ export function ConceptPanel(props: {
                     </div>
                 ) : null}
 
-                {tab === "motif" && transferRecommendations.length ? (
+                {transferRecommendationsEnabled && tab === "motif" && transferRecommendations.length ? (
                     <div className="TransferSuggestions">
                         <div className="TransferSuggestions__title">
                             {tr(locale, "来自上次任务的建议", "Suggested from previous tasks")}
@@ -726,7 +732,7 @@ export function ConceptPanel(props: {
                     </div>
                 ) : null}
 
-                {tab === "motif" && modeCLibraryEntries.length ? (
+                {transferRecommendationsEnabled && tab === "motif" && modeCLibraryEntries.length ? (
                     <div className="ModeCPanel">
                         <div className="ModeCPanel__title">
                             {tr(locale, "Mode C · 手动参考库", "Mode C · Manual Reference Library")}

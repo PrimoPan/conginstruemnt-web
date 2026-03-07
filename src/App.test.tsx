@@ -8,7 +8,13 @@ jest.mock("./components/FlowPanel", () => ({
 }));
 
 jest.mock("./components/ConceptPanel", () => ({
-  ConceptPanel: () => <div data-testid="concept-panel" />,
+  ConceptPanel: (props: any) => (
+    <div data-testid="concept-panel">
+      <span data-testid="transfer-enabled">{String(!!props.transferRecommendationsEnabled)}</span>
+      <span data-testid="transfer-stage">{props.transferReviewStage || ""}</span>
+      <span data-testid="motif-library-count">{String((props.motifLibrary || []).length)}</span>
+    </div>
+  ),
 }));
 
 jest.mock("./components/PlanStatePanel", () => ({
@@ -87,12 +93,15 @@ function makeConversationPayload(
     title: string;
     locale: "zh-CN" | "en-US";
     taskLifecycle: any;
+    transferRecommendationsEnabled: boolean;
+    cognitiveState: any;
   }>
 ) {
   return {
     conversationId,
     title: overrides?.title || "新对话",
     locale: overrides?.locale || ("zh-CN" as const),
+    transferRecommendationsEnabled: overrides?.transferRecommendationsEnabled,
     systemPrompt: "system",
     graph: {
       id: conversationId,
@@ -104,6 +113,7 @@ function makeConversationPayload(
     motifs: [],
     motifLinks: [],
     contexts: [],
+    cognitiveState: overrides?.cognitiveState,
     taskLifecycle: overrides?.taskLifecycle,
   };
 }
@@ -244,4 +254,51 @@ test("restores closed task guard when reopening a closed conversation", async ()
   expect(await screen.findByText("当前任务已结束")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "恢复当前任务" })).toBeInTheDocument();
   expect(screen.getByPlaceholderText("输入一句话（Enter 发送）")).toBeDisabled();
+});
+
+test("plain new conversations keep transfer recommendations disabled even if motif library exists", async () => {
+  localStorage.setItem("ci_token", "token-1");
+  localStorage.setItem("ci_cid", "plain-cid");
+
+  mockedApi.getConversation.mockResolvedValue(
+    makeConversationPayload("plain-cid", {
+      transferRecommendationsEnabled: false,
+      cognitiveState: {
+        current_task_id: "plain-cid",
+        tasks: [],
+        motif_library: [
+          {
+            motif_type_id: "motif_budget_duration",
+            motif_type_title: "预算 + 总时长 限制 目标",
+            dependency: "constraint",
+            abstraction_levels: ["L1"],
+            current_version_id: "v1",
+            versions: [
+              {
+                version_id: "v1",
+                version: 1,
+                title: "预算 + 总时长 限制 目标",
+                dependency: "constraint",
+                reusable_description: "预算和总时长共同限制目标。",
+                abstraction_levels: { L1: "预算与时长联动" },
+                status: "active",
+                created_at: "2026-03-07T00:00:00.000Z",
+                updated_at: "2026-03-07T00:00:00.000Z",
+              },
+            ],
+            reusable_description: "预算和总时长共同限制目标。",
+            usage_count: 1,
+            source_task_ids: ["task_prev"],
+            status: "active",
+          },
+        ],
+      },
+    })
+  );
+
+  render(<App />);
+
+  expect(await screen.findByPlaceholderText("输入一句话（Enter 发送）")).toBeInTheDocument();
+  expect(screen.getByTestId("transfer-enabled")).toHaveTextContent("false");
+  expect(screen.getByTestId("transfer-stage")).toHaveTextContent("");
 });
