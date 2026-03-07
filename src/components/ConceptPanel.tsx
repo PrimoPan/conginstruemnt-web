@@ -53,7 +53,7 @@ function motifStatusLabel(locale: AppLocale, status: ConceptMotif["status"]) {
     if (status === "active") return tr(locale, "active", "active");
     if (status === "uncertain") return tr(locale, "uncertain", "uncertain");
     if (status === "deprecated") return tr(locale, "deprecated", "deprecated");
-    if (status === "disabled") return tr(locale, "cancelled", "cancelled");
+    if (status === "disabled") return tr(locale, "disabled", "disabled");
     return tr(locale, "cancelled", "cancelled");
 }
 
@@ -61,7 +61,7 @@ function motifStatusIcon(status: ConceptMotif["status"]) {
     if (status === "active") return "✅";
     if (status === "uncertain") return "⚠";
     if (status === "deprecated") return "❌";
-    if (status === "disabled") return "•";
+    if (status === "disabled") return "⏸";
     return "•";
 }
 
@@ -152,7 +152,11 @@ function motifNamedPattern(
 
 function motifModeText(locale: AppLocale, motif: ConceptMotif) {
     const normalizeModeText = (raw: string) => {
-        const text = cleanText(raw, 180);
+        const text = cleanText(raw, 180)
+            .replace(/\|global\b/gi, "")
+            .replace(/\b(edge_repair|native)\b/gi, "")
+            .replace(/\s{2,}/g, " ")
+            .trim();
         if (!text) return "";
         if (/^coverage repair:/i.test(text)) {
             const rest = cleanText(text.replace(/^coverage repair:\s*/i, ""), 160);
@@ -209,10 +213,14 @@ function transferModeHint(locale: AppLocale, mode?: "A" | "B" | "C") {
 
 function transferDecisionStatusLabel(locale: AppLocale, status: string) {
     if (status === "adopted") return tr(locale, "已沿用", "In use");
-    if (status === "modified_pending_confirmation") return tr(locale, "待你确认", "Awaiting confirmation");
+    if (status === "pending_confirmation") return tr(locale, "待最终确认", "Awaiting final confirmation");
     if (status === "ignored") return tr(locale, "这次不用", "Skipped this trip");
     if (status === "revised") return tr(locale, "已更新", "Updated");
     return tr(locale, "待处理", "Pending");
+}
+
+function transferScopeLabel(locale: AppLocale, scope?: TransferApplicationScope) {
+    return scope === "local" ? tr(locale, "仅当前问题", "Current sub-problem only") : tr(locale, "整趟任务", "Whole trip");
 }
 
 type TabKey = "concept" | "motif";
@@ -225,8 +233,9 @@ type MotifEditDraft = {
     targetConceptId: string;
     causalOperator: MotifCausalOperator;
 };
+type TransferApplicationScope = "trip" | "local";
 
-const USER_MOTIF_STATUS_OPTIONS: MotifLifecycleStatus[] = ["active", "cancelled"];
+const USER_MOTIF_STATUS_OPTIONS: MotifLifecycleStatus[] = ["active", "disabled"];
 const CAUSAL_OPERATOR_OPTIONS: MotifCausalOperator[] = [
     "direct_causation",
     "mediated_causation",
@@ -286,10 +295,11 @@ export function ConceptPanel(props: {
     onPatchMotif: (motifId: string, patch: Partial<ConceptMotif>) => void;
     onTransferDecision?: (params: {
         candidateId: string;
-        action: "adopt" | "modify" | "ignore";
+        action: "adopt" | "modify" | "ignore" | "confirm";
         revisedText?: string;
         note?: string;
         modeOverride?: "A" | "B" | "C";
+        applicationScope?: TransferApplicationScope;
         recommendation?: {
             motif_type_id: string;
             motif_type_title: string;
@@ -365,6 +375,7 @@ export function ConceptPanel(props: {
     const [editingMotifDraft, setEditingMotifDraft] = useState<MotifEditDraft | null>(null);
     const [editingCandidateId, setEditingCandidateId] = useState("");
     const [editingCandidateText, setEditingCandidateText] = useState("");
+    const [candidateScopeById, setCandidateScopeById] = useState<Record<string, TransferApplicationScope>>({});
 
     const conceptById = useMemo(() => new Map((concepts || []).map((c) => [c.id, c])), [concepts]);
     const conceptNoById = useMemo(() => {
@@ -415,14 +426,35 @@ export function ConceptPanel(props: {
             (motifTransferState?.recommendations || [])
                 .slice()
                 .sort((a, b) => {
-                    const pa = a.decision_status === "pending" ? 1 : 0;
-                    const pb = b.decision_status === "pending" ? 1 : 0;
+                    const pa = a.decision_status === "pending" || a.decision_status === "pending_confirmation" ? 1 : 0;
+                    const pb = b.decision_status === "pending" || b.decision_status === "pending_confirmation" ? 1 : 0;
                     return pb - pa || b.match_score - a.match_score || a.candidate_id.localeCompare(b.candidate_id);
                 }),
         [motifTransferState]
     );
-    const pendingRecommendations = transferRecommendations.filter((x) => x.decision_status === "pending");
-    const handledRecommendations = transferRecommendations.filter((x) => x.decision_status !== "pending");
+    const injectionByCandidateId = useMemo(
+        () =>
+            new Map(
+                (motifTransferState?.activeInjections || []).map((x) => [cleanText(x.candidate_id, 220), x])
+            ),
+        [motifTransferState]
+    );
+    const pendingRecommendations = transferRecommendations.filter((x) => {
+        const injection = injectionByCandidateId.get(cleanText(x.candidate_id, 220));
+        return (
+            x.decision_status === "pending" ||
+            x.decision_status === "pending_confirmation" ||
+            injection?.injection_state === "pending_confirmation"
+        );
+    });
+    const handledRecommendations = transferRecommendations.filter((x) => {
+        const injection = injectionByCandidateId.get(cleanText(x.candidate_id, 220));
+        return (
+            x.decision_status !== "pending" &&
+            x.decision_status !== "pending_confirmation" &&
+            injection?.injection_state !== "pending_confirmation"
+        );
+    });
     const pendingRevisionRequests = useMemo(
         () => (motifTransferState?.revisionRequests || []).filter((x) => x.status === "pending_user_choice"),
         [motifTransferState]
@@ -511,7 +543,7 @@ export function ConceptPanel(props: {
         setEditingMotifDraft({
             title: m.title,
             description: m.description || "",
-            status: m.status === "cancelled" || m.status === "disabled" ? "cancelled" : "active",
+            status: m.status === "disabled" ? "disabled" : "active",
             sourceConceptIds: sourceIds,
             targetConceptId: targetId,
             causalOperator: m.causalOperator || defaultCausalOperator(m),
@@ -685,6 +717,9 @@ export function ConceptPanel(props: {
                             const score = Math.round(Math.max(0, Math.min(1, Number(rec.match_score || 0))) * 100);
                             const isEditing = editingCandidateId === rec.candidate_id;
                             const isInjected = injectedCandidateSet.has(cleanText(rec.candidate_id, 220));
+                            const injection = injectionByCandidateId.get(cleanText(rec.candidate_id, 220));
+                            const awaitingConfirmation = injection?.injection_state === "pending_confirmation";
+                            const selectedScope = injection?.application_scope || candidateScopeById[rec.candidate_id] || "trip";
                             return (
                                 <div key={rec.candidate_id} className="TransferSuggestions__item">
                                     <div className="TransferSuggestions__head">
@@ -697,9 +732,31 @@ export function ConceptPanel(props: {
                                     <div className="TransferSuggestions__desc">{rec.reusable_description || rec.reason}</div>
                                     {isInjected ? (
                                         <div className="TransferSuggestions__status">{tr(locale, "已沿用到当前任务", "Already in use")}</div>
+                                    ) : awaitingConfirmation ? (
+                                        <div className="TransferSuggestions__status">
+                                            {tr(locale, "已加入待确认", "Queued for confirmation")} · {transferScopeLabel(locale, selectedScope)}
+                                        </div>
                                     ) : null}
-                                    {!isEditing ? (
+                                    {!isEditing && !awaitingConfirmation ? (
                                         <div className="TransferSuggestions__actions">
+                                            <button
+                                                type="button"
+                                                className={`Btn FlowToolbar__btn ${selectedScope === "trip" ? "Btn--active" : ""}`}
+                                                onClick={() =>
+                                                    setCandidateScopeById((prev) => ({ ...prev, [rec.candidate_id]: "trip" }))
+                                                }
+                                            >
+                                                {tr(locale, "整趟任务", "Whole trip")}
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className={`Btn FlowToolbar__btn ${selectedScope === "local" ? "Btn--active" : ""}`}
+                                                onClick={() =>
+                                                    setCandidateScopeById((prev) => ({ ...prev, [rec.candidate_id]: "local" }))
+                                                }
+                                            >
+                                                {tr(locale, "仅当前问题", "Current sub-problem")}
+                                            </button>
                                             <button
                                                 type="button"
                                                 className="Btn FlowToolbar__btn"
@@ -707,10 +764,11 @@ export function ConceptPanel(props: {
                                                     onTransferDecision?.({
                                                         candidateId: rec.candidate_id,
                                                         action: "adopt",
+                                                        applicationScope: selectedScope,
                                                     })
                                                 }
                                             >
-                                                {tr(locale, "直接沿用", "Keep it")}
+                                                {tr(locale, "先加入待确认", "Queue for confirmation")}
                                             </button>
                                             <button
                                                 type="button"
@@ -735,6 +793,33 @@ export function ConceptPanel(props: {
                                                 {tr(locale, "这次不用", "Skip this trip")}
                                             </button>
                                         </div>
+                                    ) : awaitingConfirmation ? (
+                                        <div className="TransferSuggestions__actions">
+                                            <button
+                                                type="button"
+                                                className="Btn FlowToolbar__btn Btn--active"
+                                                onClick={() =>
+                                                    onTransferDecision?.({
+                                                        candidateId: rec.candidate_id,
+                                                        action: "confirm",
+                                                    })
+                                                }
+                                            >
+                                                {tr(locale, "确认沿用", "Confirm reuse")}
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className="Btn FlowToolbar__btn"
+                                                onClick={() =>
+                                                    onTransferDecision?.({
+                                                        candidateId: rec.candidate_id,
+                                                        action: "ignore",
+                                                    })
+                                                }
+                                            >
+                                                {tr(locale, "先不沿用", "Do not apply now")}
+                                            </button>
+                                        </div>
                                     ) : (
                                         <div className="TransferSuggestions__edit">
                                             <textarea
@@ -748,6 +833,24 @@ export function ConceptPanel(props: {
                                                 )}
                                             />
                                             <div className="TransferSuggestions__actions">
+                                                <button
+                                                    type="button"
+                                                    className={`Btn FlowToolbar__btn ${selectedScope === "trip" ? "Btn--active" : ""}`}
+                                                    onClick={() =>
+                                                        setCandidateScopeById((prev) => ({ ...prev, [rec.candidate_id]: "trip" }))
+                                                    }
+                                                >
+                                                    {tr(locale, "整趟任务", "Whole trip")}
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    className={`Btn FlowToolbar__btn ${selectedScope === "local" ? "Btn--active" : ""}`}
+                                                    onClick={() =>
+                                                        setCandidateScopeById((prev) => ({ ...prev, [rec.candidate_id]: "local" }))
+                                                    }
+                                                >
+                                                    {tr(locale, "仅当前问题", "Current sub-problem")}
+                                                </button>
                                                 <button
                                                     type="button"
                                                     className="Btn FlowToolbar__btn"
@@ -766,12 +869,13 @@ export function ConceptPanel(props: {
                                                             candidateId: rec.candidate_id,
                                                             action: "modify",
                                                             revisedText: editingCandidateText,
+                                                            applicationScope: selectedScope,
                                                         });
                                                         setEditingCandidateId("");
                                                         setEditingCandidateText("");
                                                     }}
                                                 >
-                                                    {tr(locale, "按修改后的版本沿用", "Use revised version")}
+                                                    {tr(locale, "保存修改并待确认", "Save revision for confirmation")}
                                                 </button>
                                             </div>
                                         </div>
@@ -931,7 +1035,7 @@ export function ConceptPanel(props: {
                         const barsOn = Math.max(1, Math.round((confidencePct / 100) * 4));
                         const pattern = motifPattern(m, conceptNoById);
                         const namedPattern = motifNamedPattern(m, conceptNoById, conceptById);
-                        const naturalTitle = motifHeadline(locale, m, conceptNoById, conceptById);
+                        const naturalTitle = cleanText(m.display_title, 160) || motifHeadline(locale, m, conceptNoById, conceptById);
                         const modeText = motifModeText(locale, m);
                         const isEditing = editingMotifId === m.id;
                         const draft = isEditing ? editingMotifDraft : null;
@@ -1011,15 +1115,15 @@ export function ConceptPanel(props: {
                                         <button
                                             type="button"
                                             className="ConceptCard__iconBtn"
-                                            title={m.status === "cancelled" || m.status === "disabled"
+                                            title={m.status === "disabled"
                                                 ? tr(locale, "启用 motif（恢复参与推理）", "Enable motif (resume reasoning)")
-                                                : tr(locale, "取消 motif（本轮不参与推理）", "Cancel motif (exclude from current reasoning)")}
+                                                : tr(locale, "停用 motif（仅用户临时关闭）", "Disable motif (user temporary off)")}
                                             onClick={(e) => {
                                                 e.stopPropagation();
-                                                const disabling = m.status !== "cancelled" && m.status !== "disabled";
+                                                const disabling = m.status !== "disabled";
                                                 onPatchMotif(m.id, {
-                                                    status: disabling ? "cancelled" : "active",
-                                                    statusReason: disabling ? "user_cancelled" : "user_reenabled",
+                                                    status: disabling ? "disabled" : "active",
+                                                    statusReason: disabling ? "user_disabled" : "user_reenabled",
                                                     resolved: true,
                                                     resolvedBy: "user",
                                                     resolvedAt: new Date().toISOString(),
@@ -1028,7 +1132,7 @@ export function ConceptPanel(props: {
                                                 });
                                             }}
                                         >
-                                            {m.status === "cancelled" || m.status === "disabled" ? "▶" : "⏸"}
+                                            {m.status === "disabled" ? "▶" : "⏸"}
                                         </button>
                                         <button
                                             type="button"

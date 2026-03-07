@@ -6,6 +6,7 @@ test("node editor should hide layer and show system confidence helper copy", () 
     render(
         <FlowInspector
             locale="zh-CN"
+            canvasMode="edit"
             node={{
                 id: "n1",
                 type: "belief",
@@ -27,6 +28,8 @@ test("node editor should hide layer and show system confidence helper copy", () 
     expect(screen.queryByText("层级")).toBeNull();
     expect(screen.getByText(/系统觉得这条信息有多靠谱/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /查看“系统觉得这条信息有多靠谱”的说明/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /查看“标题 \/ Statement”的说明/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /查看“重要性”的说明/i })).toBeInTheDocument();
     expect(screen.getByText(/你可以把它理解成：系统有多相信你刚刚这句话/)).toBeInTheDocument();
 });
 
@@ -34,6 +37,7 @@ test("edge editor should use user-facing relationship labels and expose delete a
     render(
         <FlowInspector
             locale="zh-CN"
+            canvasMode="edit"
             node={null}
             edge={{
                 id: "e1",
@@ -54,4 +58,30 @@ test("edge editor should use user-facing relationship labels and expose delete a
     expect(screen.getByRole("option", { name: "限制" })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "决定" })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "冲突" })).toBeInTheDocument();
+});
+
+test("view mode should keep inspector controls read only", () => {
+    render(
+        <FlowInspector
+            locale="zh-CN"
+            canvasMode="view"
+            node={{
+                id: "n1",
+                type: "belief",
+                statement: "意图：制定旅行计划",
+                status: "confirmed",
+                confidence: 0.84,
+                importance: 0.8,
+            }}
+            edge={null}
+            onPatchNode={() => {}}
+            onPatchEdgeType={() => {}}
+            onDeleteEdge={() => {}}
+            onDeleteNode={() => {}}
+        />
+    );
+
+    expect(screen.getByText("当前是查看模式，切到编辑模式后才可以修改。")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "删除当前节点" })).toBeDisabled();
+    expect(screen.getByRole("textbox")).toBeDisabled();
 });

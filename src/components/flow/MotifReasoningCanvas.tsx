@@ -144,7 +144,7 @@ function buildFallbackView(params: {
         return {
             id: `rm_${m.id}`,
             motifId: m.id,
-            title: cleanText(m.title, 160) || cleanText(m.templateKey, 120) || "motif",
+            title: cleanText(m.display_title, 160) || cleanText(m.title, 160) || cleanText(m.templateKey, 120) || "motif",
             relation: m.relation,
             dependencyClass: m.dependencyClass || m.relation,
             causalOperator: m.causalOperator,
@@ -876,9 +876,28 @@ export function MotifReasoningCanvas(props: {
         return m;
     }, [props.concepts]);
     const resolvedView = useMemo(() => {
+        const motifTitleById = new Map(
+            (props.motifs || []).map((motif) => [motif.id, cleanText(motif.display_title, 160) || cleanText(motif.title, 160)])
+        );
         const serverView = props.reasoningView;
         const hasServerView = Array.isArray(serverView?.nodes) && (serverView?.nodes?.length || 0) > 0;
-        if (hasServerView && serverView) return serverView as MotifReasoningView;
+        if (hasServerView && serverView) {
+            return {
+                ...serverView,
+                nodes: (serverView.nodes || []).map((node) => ({
+                    ...node,
+                    title: motifTitleById.get(node.motifId) || node.title,
+                })),
+                steps: (serverView.steps || []).map((step) => {
+                    const title = motifTitleById.get(step.motifId);
+                    if (!title) return step;
+                    return {
+                        ...step,
+                        summary: title,
+                    };
+                }),
+            } as MotifReasoningView;
+        }
         return buildFallbackView({
             motifs: props.motifs || [],
             motifLinks: props.motifLinks || [],

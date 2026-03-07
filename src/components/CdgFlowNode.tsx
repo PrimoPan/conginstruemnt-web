@@ -12,13 +12,15 @@ function shorten(input: string, max = 36) {
 
 export const CdgFlowNode = memo(function CdgFlowNode({ data, selected }: NodeProps<CdgNode>) {
     const en = data?.locale === "en-US";
+    const editable = data?.canvasMode === "edit";
     const importanceLabel = en ? "Priority" : "优先级";
     const cls = useMemo(() => {
         const parts = ["CdgNode"];
         if (data?.nodeType) parts.push(`CdgNode--type-${data.nodeType}`);
+        parts.push(editable ? "CdgNode--editable" : "CdgNode--viewOnly");
         if (selected) parts.push("is-selected");
         return parts.join(" ");
-    }, [data?.nodeType, selected]);
+    }, [data?.nodeType, editable, selected]);
 
     const importancePct =
         typeof data?.importance === "number"
@@ -46,18 +48,25 @@ export const CdgFlowNode = memo(function CdgFlowNode({ data, selected }: NodePro
             <Handle
                 type="target"
                 position={Position.Left}
-                className="CdgNode__handle"
+                className="CdgNode__handle CdgNode__handle--target"
                 style={{ background: data?.toneHandle || "#111827" }}
             />
             <Handle
                 type="source"
                 position={Position.Right}
-                className="CdgNode__handle"
+                className="CdgNode__handle CdgNode__handle--source"
                 style={{ background: data?.toneHandle || "#111827" }}
             />
 
             <div className="CdgNode__titleRow">
-                <div className="CdgNode__dragHandle" title={en ? "Drag node" : "拖拽节点"}>
+                <div
+                    className="CdgNode__dragHandle"
+                    title={
+                        editable
+                            ? (en ? "Drag node from here" : "从这里拖拽节点")
+                            : (en ? "Switch to edit mode to drag" : "切到编辑模式后可拖拽")
+                    }
+                >
                     ⋮⋮
                 </div>
                 <div className="CdgNode__titleWrap">

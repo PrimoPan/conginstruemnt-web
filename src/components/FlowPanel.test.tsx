@@ -139,6 +139,10 @@ beforeEach(() => {
     latestInspectorProps = null;
 });
 
+function enterEditMode() {
+    fireEvent.click(screen.getByRole("button", { name: "编辑模式" }));
+}
+
 test("save should use latest draft graph from zustand store and keep backend callback contract", async () => {
     const incoming = baseGraph();
     const storedDraft: CDG = {
@@ -181,6 +185,9 @@ test("save should use latest draft graph from zustand store and keep backend cal
     );
 
     const saveButton = screen.getByRole("button", { name: "保存并生成建议" });
+    expect(saveButton).toBeDisabled();
+
+    enterEditMode();
     await waitFor(() => expect(saveButton).toBeEnabled());
 
     fireEvent.click(saveButton);
@@ -224,6 +231,10 @@ test("connect should create one directed edge and dedupe repeated connects", asy
             onToggleConceptPanel={() => {}}
         />
     );
+
+    expect(latestCanvasProps?.canvasMode).toBe("view");
+    enterEditMode();
+    expect(latestCanvasProps?.canvasMode).toBe("edit");
 
     fireEvent.click(screen.getByTestId("mock-connect-edge"));
     await waitFor(() =>
@@ -285,6 +296,7 @@ test("delete edge should remove the selected relationship", async () => {
         />
     );
 
+    enterEditMode();
     fireEvent.click(screen.getByTestId("mock-select-edge"));
     await waitFor(() => expect(screen.getByTestId("mock-selected-edge")).toHaveTextContent("e_existing"));
 
@@ -332,6 +344,7 @@ test("dragging a node should persist position without reparenting edges", async 
         />
     );
 
+    enterEditMode();
     fireEvent.click(screen.getByTestId("mock-drag-node"));
 
     await waitFor(() => {
@@ -347,4 +360,45 @@ test("dragging a node should persist position without reparenting edges", async 
             }),
         ]);
     });
+});
+
+test("view mode should keep graph read only until the user switches to edit mode", async () => {
+    const onDraftGraphChange = jest.fn();
+
+    render(
+        <FlowPanel
+            conversationId="cid_readonly"
+            locale="zh-CN"
+            graph={graphWithTwoNodes()}
+            concepts={[]}
+            motifs={[]}
+            motifLinks={[]}
+            motifReasoningView={{ nodes: [], edges: [], steps: [] }}
+            activeConceptId=""
+            activeMotifId=""
+            generatingGraph={false}
+            onNodeEvidenceHover={() => {}}
+            onSelectMotif={() => {}}
+            onSelectConcept={() => {}}
+            onSaveGraph={jest.fn()}
+            savingGraph={false}
+            extraDirty={false}
+            focusNodeId=""
+            onFocusNodeHandled={() => {}}
+            onDraftGraphChange={onDraftGraphChange}
+            conceptPanelCollapsed={false}
+            onToggleConceptPanel={() => {}}
+        />
+    );
+
+    expect(screen.getByRole("button", { name: "+ 新增节点" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "保存并生成建议" })).toBeDisabled();
+    expect(screen.getByText("切到编辑模式后可修改")).toBeInTheDocument();
+
+    const callsBeforeConnect = onDraftGraphChange.mock.calls.length;
+    fireEvent.click(screen.getByTestId("mock-connect-edge"));
+    expect(onDraftGraphChange.mock.calls.length).toBe(callsBeforeConnect);
+
+    enterEditMode();
+    expect(screen.getByRole("button", { name: "+ 新增节点" })).toBeEnabled();
 });
