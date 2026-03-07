@@ -681,6 +681,7 @@ export function cdgToFlow(
     graph: CDG,
     opts?: {
         locale?: AppLocale;
+        canvasMode?: "view" | "edit";
         importanceOverrides?: Record<string, number>;
         onImportanceChange?: (nodeId: string, value: number) => void;
         onNodePatch?: (nodeId: string, patch: Partial<CDGNode>) => void;
@@ -711,6 +712,7 @@ export function cdgToFlow(
     const nodeById = new Map(safeNodes.map((n) => [n.id, n]));
     const overrides = opts?.importanceOverrides || {};
     const locale = opts?.locale || "zh-CN";
+    const canvasMode = opts?.canvasMode || "view";
     const activeNodeIds = opts?.activeNodeIds || new Set<string>();
     const pausedNodeIds = opts?.pausedNodeIds || new Set<string>();
     const conceptIdsByNodeId = opts?.conceptIdsByNodeId || new Map<string, string[]>();
@@ -729,8 +731,10 @@ export function cdgToFlow(
             id: n.id,
             type: "cdgNode",
             position: positions.get(n.id) || { x: 120, y: 120 },
+            dragHandle: canvasMode === "edit" ? ".CdgNode__dragHandle" : undefined,
             data: {
                 locale,
+                canvasMode,
                 shortLabel,
                 fullLabel,
                 meta: nodeMeta(n, locale),

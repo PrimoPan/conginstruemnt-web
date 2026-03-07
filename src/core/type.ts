@@ -158,7 +158,7 @@ export type MotifTransferRecommendation = {
     reason: string;
     match_score: number;
     recommended_mode: "A" | "B" | "C";
-    decision_status: "pending" | "adopted" | "modified_pending_confirmation" | "ignored" | "revised";
+    decision_status: "pending" | "pending_confirmation" | "adopted" | "ignored" | "revised";
     decision_at?: string;
     source_task_id?: string;
     source_conversation_id?: string;
@@ -170,11 +170,12 @@ export type MotifTransferState = {
     decisions: Array<{
         id: string;
         candidate_id: string;
-        action: "adopt" | "modify" | "ignore";
-        decision_status: "pending" | "adopted" | "modified_pending_confirmation" | "ignored" | "revised";
+        action: "adopt" | "modify" | "ignore" | "confirm";
+        decision_status: "pending" | "pending_confirmation" | "adopted" | "ignored" | "revised";
         decided_at: string;
         revised_text?: string;
         note?: string;
+        application_scope?: "trip" | "local";
     }>;
     activeInjections: Array<{
         candidate_id: string;
@@ -188,6 +189,7 @@ export type MotifTransferState = {
         source_conversation_id?: string;
         adopted_at: string;
         disabled_reason?: string;
+        application_scope?: "trip" | "local";
     }>;
     feedbackEvents: Array<{
         event_id: string;
@@ -248,7 +250,7 @@ export type CognitiveState = {
             status: "active" | "uncertain" | "deprecated" | "cancelled";
             match_score: number;
             recommended_mode: "A" | "B" | "C";
-            decision_status: "pending" | "adopted" | "modified_pending_confirmation" | "ignored" | "revised";
+            decision_status: "pending" | "pending_confirmation" | "adopted" | "ignored" | "revised";
             decision_at?: string;
             reason: string;
         }>;
@@ -511,6 +513,7 @@ export type TurnStreamErrorData = {
 
 export type FlowNodeData = {
     locale?: AppLocale;
+    canvasMode?: "view" | "edit";
     shortLabel: string;
     fullLabel: string;
     meta: string;
@@ -649,6 +652,7 @@ export type ConceptMotif = {
     conceptIds: string[];
     anchorConceptId: string;
     title: string;
+    display_title?: string;
     description: string;
     confidence: number;
     supportEdgeIds: string[];

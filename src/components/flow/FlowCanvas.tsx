@@ -31,6 +31,7 @@ export function useFlowState() {
 
 export function FlowCanvas(props: {
     graphKey: string;
+    canvasMode: "view" | "edit";
     nodes: Node<FlowNodeData>[];
     edges: Edge[];
     nodeTypes: any;
@@ -77,8 +78,8 @@ export function FlowCanvas(props: {
             nodeTypes={props.nodeTypes}
             fitView
             fitViewOptions={{ padding: 0.28, duration: 260 }}
-            nodesConnectable
-            nodesDraggable
+            nodesConnectable={props.canvasMode === "edit"}
+            nodesDraggable={props.canvasMode === "edit"}
             elementsSelectable
             panOnDrag
             selectionOnDrag={false}

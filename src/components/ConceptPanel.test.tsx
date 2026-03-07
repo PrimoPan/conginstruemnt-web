@@ -128,9 +128,11 @@ test("uses section-5 user language after first-turn retrieval instead of interna
   });
 
   expect(screen.getByText("这次可能可以沿用的思路")).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "直接沿用" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "先加入待确认" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "先改一下" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "这次不用" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "整趟任务" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "仅当前问题" })).toBeInTheDocument();
   expect(screen.getByText(/建议直接沿用/)).toBeInTheDocument();
   expect(screen.getByText("历史思路库")).toBeInTheDocument();
   expect(screen.queryByText(/Mode C/i)).not.toBeInTheDocument();
@@ -141,9 +143,9 @@ test("uses section-5 user language after first-turn retrieval instead of interna
 test("renders motif cards with readable summary, named pattern, and no empty source footer", () => {
   renderPanel({
     motifs: [
-      {
-        id: "motif_1",
-        motif_id: "motif_1",
+        {
+          id: "motif_1",
+          motif_id: "motif_1",
         motif_type: "determine",
         motifType: "pair",
         relation: "determine",
@@ -158,12 +160,13 @@ test("renders motif cards with readable summary, named pattern, and no empty sou
         anchorConceptId: "c2",
         supportEdgeIds: [],
         supportNodeIds: [],
-        roles: { sources: ["c1"], target: "c2" },
-        scope: "global",
-        aliases: [],
-        motif_type_title: "Context-Driven Preference Prioritization",
-        updatedAt: "2026-03-07T00:00:00.000Z",
-      } as any,
+          roles: { sources: ["c1"], target: "c2" },
+          scope: "global",
+          aliases: [],
+          display_title: "携家出游会优先考虑儿童友好选项",
+          motif_type_title: "Context-Driven Preference Prioritization",
+          updatedAt: "2026-03-07T00:00:00.000Z",
+        } as any,
     ],
     contexts: [
       {
@@ -225,7 +228,7 @@ test("renders motif cards with readable summary, named pattern, and no empty sou
     ] as any,
   });
 
-  expect(screen.getByText("预算会直接决定住宿档位")).toBeInTheDocument();
+  expect(screen.getByText("携家出游会优先考虑儿童友好选项")).toBeInTheDocument();
   expect(screen.getByText("Context-Driven Preference Prioritization")).toBeInTheDocument();
   expect(screen.getByText("C1 预算 -> C2 住宿档位")).toBeInTheDocument();
   expect(screen.getByText("Context:")).toBeInTheDocument();
@@ -233,4 +236,48 @@ test("renders motif cards with readable summary, named pattern, and no empty sou
   expect(screen.getByText(/这条思路有多靠谱/)).toBeInTheDocument();
   expect(screen.queryByText(/来源:\s*n\/a|source:\s*n\/a/i)).not.toBeInTheDocument();
   expect(screen.queryByText(/干预|Intervention|Determine（/i)).not.toBeInTheDocument();
+});
+
+test("shows explicit confirmation controls after a recommendation is queued", () => {
+  renderPanel({
+    transferReviewStage: "ready",
+    motifTransferState: {
+      recommendations: [
+        {
+          candidate_id: "cand_pending",
+          motif_type_id: "motif_local_pace",
+          motif_type_title: "慢节奏优先",
+          dependency: "constraint",
+          reusable_description: "减少跨城折返，留足休整。",
+          status: "active",
+          reason: "高匹配",
+          match_score: 0.82,
+          recommended_mode: "A",
+          decision_status: "pending_confirmation",
+          created_at: "2026-03-07T00:00:00.000Z",
+        },
+      ],
+      decisions: [],
+      activeInjections: [
+        {
+          candidate_id: "cand_pending",
+          motif_type_id: "motif_local_pace",
+          motif_type_title: "慢节奏优先",
+          mode: "A",
+          injection_state: "pending_confirmation",
+          transfer_confidence: 0.82,
+          constraint_text: "减少跨城折返，留足休整。",
+          adopted_at: "2026-03-07T00:00:00.000Z",
+          application_scope: "local",
+        },
+      ],
+      feedbackEvents: [],
+      revisionRequests: [],
+    },
+  });
+
+  expect(screen.getByText(/已加入待确认/)).toBeInTheDocument();
+  expect(screen.getByText(/仅当前问题/)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "确认沿用" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "先不沿用" })).toBeInTheDocument();
 });

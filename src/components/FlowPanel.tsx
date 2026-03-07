@@ -230,6 +230,7 @@ export function FlowPanel(props: {
     const tr = (zh: string, enText: string) => (en ? enText : zh);
     const setConversationDraft = useCanvasDraftStore((state) => state.setConversationDraft);
     const [canvasView, setCanvasView] = useState<"concept" | "motif">("concept");
+    const [canvasMode, setCanvasMode] = useState<"view" | "edit">("view");
     const [draftGraph, setDraftGraph] = useState<CDG>(() => {
         const normalized = normalizeGraphClient(graph);
         const stored = useCanvasDraftStore.getState().getConversationDraft(conversationId);
@@ -325,6 +326,14 @@ export function FlowPanel(props: {
         if (activeConceptId && !activeMotifId) setCanvasView("concept");
     }, [activeConceptId, activeMotifId]);
 
+    useEffect(() => {
+        if (canvasMode === "edit") return;
+        if (motifComposerOpen) {
+            setMotifComposerOpen(false);
+            setMotifComposerError("");
+        }
+    }, [canvasMode, motifComposerOpen]);
+
     const updateDraftGraph = useCallback((updater: (prev: CDG) => CDG) => {
         setDraftGraph((prev) => {
             const next = updater(prev);
@@ -337,6 +346,7 @@ export function FlowPanel(props: {
 
     const onNodePatch = useCallback(
         (nodeId: string, patch: Partial<CDGNode>) => {
+            if (canvasMode !== "edit") return;
             updateDraftGraph((prev) => ({
                 ...prev,
                 nodes: (prev.nodes || []).map((n) => {
@@ -358,7 +368,7 @@ export function FlowPanel(props: {
                 }),
             }));
         },
-        [updateDraftGraph]
+        [canvasMode, updateDraftGraph]
     );
 
     const onImportanceChange = useCallback(
@@ -369,6 +379,7 @@ export function FlowPanel(props: {
     useEffect(() => {
         const flow = cdgToFlow(draftGraph, {
             locale,
+            canvasMode,
             onNodePatch,
             onImportanceChange,
             activeNodeIds,
@@ -377,7 +388,7 @@ export function FlowPanel(props: {
         });
         setNodes(flow.nodes);
         setEdges(flow.edges);
-    }, [draftGraph, locale, onImportanceChange, onNodePatch, setEdges, setNodes, activeNodeIds, pausedNodeIds, conceptIdsByNodeId]);
+    }, [draftGraph, locale, canvasMode, onImportanceChange, onNodePatch, setEdges, setNodes, activeNodeIds, pausedNodeIds, conceptIdsByNodeId]);
 
     const selectedNode = useMemo(
         () => (draftGraph.nodes || []).find((n) => n.id === selectedNodeId) || null,
@@ -390,16 +401,18 @@ export function FlowPanel(props: {
 
     const patchEdgeType = useCallback(
         (edgeId: string, edgeType: EdgeType) => {
+            if (canvasMode !== "edit") return;
             updateDraftGraph((prev) => ({
                 ...prev,
                 edges: (prev.edges || []).map((e) => (e.id === edgeId ? { ...e, type: edgeType } : e)),
             }));
         },
-        [updateDraftGraph]
+        [canvasMode, updateDraftGraph]
     );
 
     const deleteEdge = useCallback(
         (edgeId: string) => {
+            if (canvasMode !== "edit") return;
             if (!edgeId) return;
             updateDraftGraph((prev) => ({
                 ...prev,
@@ -408,11 +421,12 @@ export function FlowPanel(props: {
             setSelectedEdgeId("");
             setSelectedNodeId("");
         },
-        [updateDraftGraph]
+        [canvasMode, updateDraftGraph]
     );
 
     const createEdge = useCallback(
         (fromId: string, toId: string) => {
+            if (canvasMode !== "edit") return;
             if (!fromId || !toId || fromId === toId) return;
             const existing = findDirectedEdge(draftGraphRef.current.edges || [], fromId, toId);
             if (existing) {
@@ -438,11 +452,12 @@ export function FlowPanel(props: {
             setSelectedEdgeId(edgeId);
             setSelectedNodeId("");
         },
-        [updateDraftGraph]
+        [canvasMode, updateDraftGraph]
     );
 
     const deleteNode = useCallback(
         (nodeId: string) => {
+            if (canvasMode !== "edit") return;
             if (!nodeId) return;
             updateDraftGraph((prev) => {
                 return deleteNodeAndReconnect(prev, nodeId);
@@ -450,10 +465,11 @@ export function FlowPanel(props: {
             setSelectedNodeId("");
             setSelectedEdgeId("");
         },
-        [updateDraftGraph]
+        [canvasMode, updateDraftGraph]
     );
 
     const addNode = useCallback(() => {
+        if (canvasMode !== "edit") return;
         let createdId = "";
         updateDraftGraph((prev) => {
             const parentId = selectedNodeId || pickRootGoalId(prev) || "";
@@ -487,9 +503,10 @@ export function FlowPanel(props: {
         });
         if (createdId) setSelectedNodeId(createdId);
         setSelectedEdgeId("");
-    }, [en, nodes, selectedNodeId, updateDraftGraph]);
+    }, [canvasMode, en, nodes, selectedNodeId, updateDraftGraph]);
 
     const createMotifFromSentence = useCallback(() => {
+        if (canvasMode !== "edit") return;
         const text = cleanText(motifSentence, 280);
         if (!text) {
             setMotifComposerError(en ? "Please enter a causal sentence." : "请输入一句因果关系描述。");
@@ -600,24 +617,27 @@ export function FlowPanel(props: {
         setSelectedNodeId(draft.targetNodeId);
         setSelectedEdgeId("");
         onCreateMotifDraft?.(draft);
-    }, [concepts, en, motifSentence, nodes, onCreateMotifDraft, updateDraftGraph]);
+    }, [canvasMode, concepts, en, motifSentence, nodes, onCreateMotifDraft, updateDraftGraph]);
 
     const onNodeDragStart = useCallback((_: any, node: any) => {
+        if (canvasMode !== "edit") return;
         dragStartRef.current = {
             ...dragStartRef.current,
             ...makeDragStartSnapshot([node]),
         };
-    }, []);
+    }, [canvasMode]);
 
     const onSelectionDragStart = useCallback((_: any, draggedNodes: any[]) => {
+        if (canvasMode !== "edit") return;
         selectionDragNodeIdsRef.current = (draggedNodes || []).map((node) => node.id);
         dragStartRef.current = {
             ...dragStartRef.current,
             ...makeDragStartSnapshot(draggedNodes || []),
         };
-    }, []);
+    }, [canvasMode]);
 
     const onSelectionDragStop = useCallback((_: any, draggedNodes: any[]) => {
+        if (canvasMode !== "edit") return;
         const movedNodes = pickMovedNodes(draggedNodes || [], dragStartRef.current, 6);
         for (const node of draggedNodes || []) delete dragStartRef.current[node.id];
         selectionDragNodeIdsRef.current = [];
@@ -629,10 +649,11 @@ export function FlowPanel(props: {
         setDraftGraph(nextGraph);
         setDirty(true);
         setConversationDraft(conversationId, nextGraph, true);
-    }, [conversationId, setConversationDraft]);
+    }, [canvasMode, conversationId, setConversationDraft]);
 
     const onNodeDragStop = useCallback(
         (_: any, dragged: any) => {
+            if (canvasMode !== "edit") return;
             const selectionIds = selectionDragNodeIdsRef.current;
             const isMultiSelectionDrag = selectionIds.length > 1 && selectionIds.includes(dragged.id);
             if (isMultiSelectionDrag) return;
@@ -656,7 +677,7 @@ export function FlowPanel(props: {
             setDirty(true);
             setConversationDraft(conversationId, nextGraph, true);
         },
-        [conversationId, setConversationDraft]
+        [canvasMode, conversationId, setConversationDraft]
     );
 
     const hasUnsavedChanges = dirty || !!extraDirty;
@@ -666,7 +687,7 @@ export function FlowPanel(props: {
     }, [hasUnsavedChanges, onUnsavedStateChange]);
 
     const saveGraph = useCallback(async () => {
-        if (!onSaveGraph || savingGraph || !hasUnsavedChanges) return;
+        if (canvasMode !== "edit" || !onSaveGraph || savingGraph || !hasUnsavedChanges) return;
         setSaveError("");
         const latestDraft = draftGraphRef.current;
         try {
@@ -685,7 +706,7 @@ export function FlowPanel(props: {
         } catch (e: any) {
             setSaveError(e?.message || (en ? "Save failed" : "保存失败"));
         }
-    }, [conversationId, en, hasUnsavedChanges, onSaveGraph, savingGraph, setConversationDraft]);
+    }, [canvasMode, conversationId, en, hasUnsavedChanges, onSaveGraph, savingGraph, setConversationDraft]);
 
     return (
         <div className="Panel">
@@ -707,6 +728,24 @@ export function FlowPanel(props: {
                     </button>
                 </div>
                 <div className="FlowPanel__headerActions">
+                    <div className="FlowPanel__modeSwitch" role="tablist" aria-label={tr("画布模式", "Canvas mode")}>
+                        <button
+                            type="button"
+                            className={`FlowPanel__modeBtn ${canvasMode === "view" ? "is-active" : ""}`}
+                            onClick={() => setCanvasMode("view")}
+                            aria-pressed={canvasMode === "view"}
+                        >
+                            {tr("查看模式", "View")}
+                        </button>
+                        <button
+                            type="button"
+                            className={`FlowPanel__modeBtn ${canvasMode === "edit" ? "is-active" : ""}`}
+                            onClick={() => setCanvasMode("edit")}
+                            aria-pressed={canvasMode === "edit"}
+                        >
+                            {tr("编辑模式", "Edit")}
+                        </button>
+                    </div>
                     <button type="button" className="FlowPanel__panelToggle" onClick={onToggleConceptPanel}>
                         {conceptPanelCollapsed
                             ? tr("展开 Concept 列表", "Expand Concept Panel")
@@ -722,6 +761,7 @@ export function FlowPanel(props: {
                     <>
                         <FlowToolbar
                             locale={locale}
+                            canvasMode={canvasMode}
                             onAddNode={addNode}
                             onSave={saveGraph}
                             canSave={!!onSaveGraph && hasUnsavedChanges}
@@ -732,6 +772,7 @@ export function FlowPanel(props: {
 
                         <FlowInspector
                             locale={locale}
+                            canvasMode={canvasMode}
                             node={selectedNode}
                             edge={selectedEdge}
                             onPatchNode={onNodePatch}
@@ -742,6 +783,7 @@ export function FlowPanel(props: {
 
                         <FlowCanvas
                             graphKey={`${draftGraph.id || "graph"}:${draftGraph.version ?? 0}`}
+                            canvasMode={canvasMode}
                             nodes={nodes}
                             edges={edges}
                             nodeTypes={nodeTypes}
@@ -779,10 +821,12 @@ export function FlowPanel(props: {
                                     type="button"
                                     className="Btn FlowToolbar__btn"
                                     onClick={() => {
+                                        if (canvasMode !== "edit") return;
                                         setMotifComposerOpen((v) => !v);
                                         setMotifComposerError("");
                                     }}
                                     title={tr("创建主题（Motif 实例）", "Create motif instance")}
+                                    disabled={canvasMode !== "edit"}
                                 >
                                     {tr("+ 创建主题", "+ Create Motif")}
                                 </button>
@@ -792,12 +836,13 @@ export function FlowPanel(props: {
                                     type="button"
                                     className="Btn FlowToolbar__save"
                                     onClick={saveGraph}
-                                    disabled={!onSaveGraph || !hasUnsavedChanges || !!savingGraph}
+                                    disabled={canvasMode !== "edit" || !onSaveGraph || !hasUnsavedChanges || !!savingGraph}
                                 >
                                     {savingGraph ? tr("保存中...", "Saving...") : tr("保存并生成建议", "Save and Generate Advice")}
                                 </button>
                                 {hasUnsavedChanges ? <span className="FlowToolbar__dirty">{tr("未保存", "Unsaved")}</span> : null}
                             </div>
+                            {canvasMode !== "edit" ? <div className="FlowToolbar__hint">{tr("切到编辑模式后可修改", "Switch to edit mode to modify")}</div> : null}
                         </div>
                         {motifComposerOpen ? (
                             <div className="MotifComposer" onClick={(e) => e.stopPropagation()}>
