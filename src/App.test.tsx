@@ -95,6 +95,7 @@ function makeConversationPayload(
     taskLifecycle: any;
     transferRecommendationsEnabled: boolean;
     cognitiveState: any;
+    travelPlanState: any;
   }>
 ) {
   return {
@@ -114,6 +115,7 @@ function makeConversationPayload(
     motifLinks: [],
     contexts: [],
     cognitiveState: overrides?.cognitiveState,
+    travelPlanState: overrides?.travelPlanState,
     taskLifecycle: overrides?.taskLifecycle,
   };
 }
@@ -315,4 +317,47 @@ test("new trip modal explains section-5 inheritance flow in user language", asyn
     screen.getByText("如果你已经知道这次有几条底线必须和上次一样，可以先写在这里（可选）")
   ).toBeInTheDocument();
   expect(screen.getByText("继续保留长期稳定的个人情况（身体/饮食/语言/安全等）")).toBeInTheDocument();
+});
+
+test("new trip creation carries the previous task id instead of inheriting from the whole conversation history", async () => {
+  localStorage.setItem("ci_token", "token-1");
+  localStorage.setItem("ci_cid", "active-trip");
+
+  mockedApi.getConversation.mockResolvedValue(
+    makeConversationPayload("active-trip", {
+      locale: "zh-CN",
+      travelPlanState: {
+        task_id: "task_kyoto_1",
+      },
+    })
+  );
+  mockedApi.createConversation.mockResolvedValue(
+    makeConversationPayload("new-trip", {
+      locale: "zh-CN",
+      transferRecommendationsEnabled: true,
+    })
+  );
+
+  render(<App />);
+
+  expect(await screen.findByPlaceholderText("输入一句话（Enter 发送）")).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: "新增旅游规划" }));
+  fireEvent.change(await screen.findByPlaceholderText("例如：京都"), { target: { value: "首尔" } });
+  fireEvent.click(screen.getByRole("button", { name: "创建并开始" }));
+
+  await waitFor(() => {
+    expect(mockedApi.createConversation).toHaveBeenCalledWith(
+      "token-1",
+      "旅行规划·首尔",
+      "zh-CN",
+      expect.objectContaining({
+        planningBootstrap: expect.objectContaining({
+          sourceTaskId: "task_kyoto_1",
+          sourceConversationId: "active-trip",
+          destination: "首尔",
+        }),
+      })
+    );
+  });
 });

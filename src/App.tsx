@@ -810,6 +810,7 @@ export default function App() {
     abortRef.current = null;
 
     const planningBootstrap: TravelPlanningBootstrapRequest = {
+      sourceTaskId: (travelPlanState as any)?.task_id || undefined,
       sourceConversationId: cid || undefined,
       destination,
       keepConsistentText: newTripKeepConsistentText.trim() || undefined,
@@ -822,6 +823,7 @@ export default function App() {
       const title = preferredLocale === "en-US" ? `Trip Plan · ${destination}` : `旅行规划·${destination}`;
       const nextPlanningBootstrap: TravelPlanningBootstrapRequest = {
         ...planningBootstrap,
+        sourceTaskId: conversationLocale === preferredLocale ? planningBootstrap.sourceTaskId : undefined,
         sourceConversationId: conversationLocale === preferredLocale ? planningBootstrap.sourceConversationId : undefined,
       };
       const r = await api.createConversation(token, title, preferredLocale, { planningBootstrap: nextPlanningBootstrap });

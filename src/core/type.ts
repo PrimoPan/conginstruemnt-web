@@ -103,6 +103,7 @@ export type ConversationSummary = {
 };
 
 export type TravelPlanningBootstrapRequest = {
+    sourceTaskId?: string;
     sourceConversationId?: string;
     destination?: string;
     keepConsistentText?: string;
