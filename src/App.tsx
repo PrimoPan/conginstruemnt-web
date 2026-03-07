@@ -1314,6 +1314,74 @@ export default function App() {
     }
   }
 
+  async function onTransferBatchDecision(params: {
+    items: Array<{
+      candidateId: string;
+      action: "adopt" | "modify" | "ignore" | "confirm";
+      revisedText?: string;
+      note?: string;
+      modeOverride?: "A" | "B" | "C";
+      applicationScope?: "trip" | "local";
+      recommendation?: {
+        motif_type_id: string;
+        motif_type_title: string;
+        dependency?: string;
+        reusable_description?: string;
+        source_task_id?: string;
+        source_conversation_id?: string;
+        status?: "active" | "uncertain" | "deprecated" | "cancelled";
+        reason?: string;
+        match_score?: number;
+        recommended_mode?: "A" | "B" | "C";
+      };
+    }>;
+  }) {
+    if (!token || !cid || !params.items.length) return;
+    try {
+      const out = await api.motifTransferBatchDecision(token, cid, {
+        items: params.items.map((item) => ({
+          candidate_id: item.candidateId,
+          action: item.action,
+          revised_text: item.revisedText,
+          note: item.note,
+          mode_override: item.modeOverride,
+          application_scope: item.applicationScope,
+          recommendation: item.recommendation,
+        })),
+      });
+      applyConversationPayload(out);
+      const followups = Array.from(new Set((out.followupQuestions || []).filter(Boolean)));
+      if (followups.length === 1) {
+        setMessages((prev) => [...prev, { id: makeId("transfer_batch_q"), role: "assistant", text: followups[0] || "" }]);
+      } else if (followups.length > 1) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: makeId("transfer_batch_qs"),
+            role: "assistant",
+            text:
+              locale === "en-US"
+                ? `Queued ${followups.length} historical patterns for review. Confirm them one by one in the motif panel.`
+                : `已把 ${followups.length} 条历史思路加入待确认区。请在 motif 面板里逐条确认。`,
+          },
+        ]);
+      }
+    } catch (e: any) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: makeId("transfer_batch_err"),
+          role: "assistant",
+          text: `${tr("批量迁移决策失败", "Batch transfer decision failed")}: ${userFacingError(
+            e,
+            "请求失败，请稍后重试。",
+            "Request failed. Please retry later."
+          )}`,
+        },
+      ]);
+    }
+  }
+
   async function onTransferFeedback(params: {
     signal: "thumbs_down" | "retry" | "manual_override" | "explicit_not_applicable";
     signalText?: string;
@@ -1352,6 +1420,11 @@ export default function App() {
     motifTypeId: string;
     choice: "overwrite" | "new_version";
     requestId?: string;
+    title?: string;
+    dependency?: string;
+    reusableDescription?: string;
+    abstractionText?: { L1?: string; L2?: string; L3?: string };
+    targetCandidateIds?: string[];
   }) {
     if (!token || !cid) return;
     try {
@@ -1359,8 +1432,28 @@ export default function App() {
         motif_type_id: params.motifTypeId,
         choice: params.choice,
         request_id: params.requestId,
+        title: params.title,
+        dependency: params.dependency,
+        reusable_description: params.reusableDescription,
+        abstraction_text: params.abstractionText,
+        target_candidate_ids: params.targetCandidateIds,
       });
       applyConversationPayload(out);
+      const summary = out.revision_summary;
+      if (summary) {
+        const changedFields = (summary.changed_fields || []).map((x) => x.field).join(", ");
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: makeId("transfer_revise_done"),
+            role: "assistant",
+            text:
+              locale === "en-US"
+                ? `${summary.choice === "overwrite" ? "Overwrote" : "Created a new version for"} motif "${params.motifTypeId}". Changed: ${changedFields || "no fields"}.`
+                : `${summary.choice === "overwrite" ? "已覆盖更新" : "已新建版本"} motif「${params.motifTypeId}」。变更字段：${changedFields || "无"}`,
+          },
+        ]);
+      }
     } catch (e: any) {
       setMessages((prev) => [
         ...prev,
@@ -1904,6 +1997,7 @@ export default function App() {
                   onPatchConcept={onPatchConcept}
                   onPatchMotif={onPatchMotif}
                   onTransferDecision={onTransferDecision}
+                  onTransferBatchDecision={onTransferBatchDecision}
                   onTransferFeedback={onTransferFeedback}
                   onReviseMotifLibrary={onReviseMotifLibrary}
                   onModeCReference={onModeCReference}

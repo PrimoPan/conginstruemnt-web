@@ -93,6 +93,8 @@ REACT_APP_API_BASE_URLS=http://127.0.0.1:3001,https://api.example.com
 - Concept 是独立语义槽位对象，可关联多个节点（`1 concept -> N nodes`），并由 `primaryNodeId` 作为主展示锚点。
 - Motif 卡片展示关系模式与状态机（`active / uncertain / deprecated / disabled / cancelled`），并展示 `C1/C2/...` 组合模式与应用来源提示。
 - 新任务开始后的历史 motif 推荐走“侧边栏静默出现 -> 用户先选择作用域（整趟任务 / 仅当前问题）-> 加入待确认 -> 用户最终确认”两段式交互，不会在用户第一句话前打断。
+- Transfer review 面板支持批量审阅：用户可勾选多条候选，一次性执行“批量加入待确认 / 批量确认沿用 / 批量跳过”，但最终是否生效仍保持用户显式确认。
+- IS3 revision 面板支持在 UI 中查看 revision diff：可编辑 `title / dependency / reusable description / L1-L3`，看到受影响的当前注入列表，并只把修订传播到其中一部分（partial accept）。
 - Motif 的用户手动开关只控制 `active / disabled`；`cancelled` 保留给历史覆盖或系统淘汰的 motif，不再作为“临时停用”的同义词。
 - 右侧 `Motif Reasoning` 画布在 `编辑模式` 下已支持 motif 外部结构编辑：可拖拽节点句柄新增 link、点击 link 后修改 `supports / precedes / refines / conflicts_with`，也可直接删除。
 - `Motif Reasoning` 在查看模式优先显示后端标准化推理视图；切到编辑模式后会回退到基于当前 `motifs + motifLinks` 的本地草稿视图，确保未保存的 link 变更立即可见。

@@ -210,6 +210,16 @@ export type MotifTransferState = {
         status: "pending_user_choice" | "resolved";
         options: Array<"overwrite" | "new_version">;
         suggested_action?: "overwrite" | "new_version";
+        affected_injections?: Array<{
+            candidate_id: string;
+            motif_type_id: string;
+            motif_type_title: string;
+            injection_state: "injected" | "pending_confirmation" | "disabled";
+            application_scope?: "trip" | "local";
+            constraint_text: string;
+        }>;
+        resolved_candidate_ids?: string[];
+        resolution_choice?: "overwrite" | "new_version";
     }>;
     lastEvaluatedAt?: string;
     lastDecisionAt?: string;
@@ -296,6 +306,19 @@ export type CognitiveState = {
             transfer_confidence: number;
             last_used_at?: string;
         };
+    }>;
+};
+
+export type MotifLibraryRevisionSummary = {
+    choice: "overwrite" | "new_version";
+    previous_version_id?: string;
+    current_version_id?: string;
+    overwritten_version_id?: string;
+    version_created: boolean;
+    changed_fields: Array<{
+        field: "title" | "dependency" | "reusable_description" | "L1" | "L2" | "L3" | "status";
+        current_value?: string;
+        next_value?: string;
     }>;
 };
 

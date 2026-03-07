@@ -281,3 +281,192 @@ test("shows explicit confirmation controls after a recommendation is queued", ()
   expect(screen.getByRole("button", { name: "确认沿用" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "先不沿用" })).toBeInTheDocument();
 });
+
+test("supports batch transfer review actions for multiple visible recommendations", () => {
+  const onTransferBatchDecision = jest.fn();
+  renderPanel({
+    transferReviewStage: "ready",
+    onTransferBatchDecision,
+    motifTransferState: {
+      recommendations: [
+        {
+          candidate_id: "cand_batch_1",
+          motif_type_id: "motif_local_pace",
+          motif_type_title: "慢节奏优先",
+          dependency: "constraint",
+          reusable_description: "减少跨城折返，留足休整。",
+          status: "active",
+          reason: "高匹配",
+          match_score: 0.82,
+          recommended_mode: "A",
+          decision_status: "pending",
+          created_at: "2026-03-07T00:00:00.000Z",
+        },
+        {
+          candidate_id: "cand_batch_2",
+          motif_type_id: "motif_child_friendly",
+          motif_type_title: "儿童友好优先",
+          dependency: "determine",
+          reusable_description: "优先儿童友好的住宿与活动。",
+          status: "active",
+          reason: "高匹配",
+          match_score: 0.8,
+          recommended_mode: "A",
+          decision_status: "pending",
+          created_at: "2026-03-07T00:00:00.000Z",
+        },
+      ],
+      decisions: [],
+      activeInjections: [],
+      feedbackEvents: [],
+      revisionRequests: [],
+    },
+  });
+
+  fireEvent.click(screen.getByRole("button", { name: "全选当前建议" }));
+  fireEvent.click(screen.getByRole("button", { name: "批量加入待确认" }));
+
+  expect(onTransferBatchDecision).toHaveBeenCalledWith({
+    items: [
+      expect.objectContaining({
+        candidateId: "cand_batch_1",
+        action: "adopt",
+        applicationScope: "trip",
+        recommendation: expect.objectContaining({ motif_type_title: "慢节奏优先" }),
+      }),
+      expect.objectContaining({
+        candidateId: "cand_batch_2",
+        action: "adopt",
+        applicationScope: "trip",
+        recommendation: expect.objectContaining({ motif_type_title: "儿童友好优先" }),
+      }),
+    ],
+  });
+});
+
+test("revision editor submits diff fields and partial propagation targets", () => {
+  const onReviseMotifLibrary = jest.fn();
+  renderPanel({
+    transferReviewStage: "ready",
+    onReviseMotifLibrary,
+    motifLibrary: [
+      {
+        motif_type_id: "motif_local_pace",
+        motif_type_title: "慢节奏优先",
+        dependency: "constraint",
+        reusable_description: "减少跨城折返，留足休整。",
+        abstraction_levels: ["L1", "L2", "L3"],
+        current_version_id: "mv_pace_1",
+        source_task_ids: ["task_prev"],
+        status: "active",
+        usage_count: 3,
+        versions: [
+          {
+            version_id: "mv_pace_1",
+            version: 1,
+            title: "慢节奏优先",
+            dependency: "constraint",
+            reusable_description: "减少跨城折返，留足休整。",
+            abstraction_levels: {
+              L1: "不要太赶",
+              L2: "低强度节奏优先",
+              L3: "慢节奏旅行",
+            },
+            status: "active",
+            created_at: "2026-03-07T00:00:00.000Z",
+            updated_at: "2026-03-07T00:00:00.000Z",
+          },
+        ],
+        usage_stats: {
+          adopted_count: 4,
+          ignored_count: 1,
+          feedback_negative_count: 0,
+          transfer_confidence: 0.81,
+        },
+      } as any,
+    ],
+    motifTransferState: {
+      recommendations: [],
+      decisions: [],
+      activeInjections: [
+        {
+          candidate_id: "cand_keep",
+          motif_type_id: "motif_local_pace",
+          motif_type_title: "慢节奏优先",
+          mode: "A",
+          injection_state: "injected",
+          transfer_confidence: 0.82,
+          constraint_text: "减少跨城折返，留足休整。",
+          adopted_at: "2026-03-07T00:00:00.000Z",
+          application_scope: "trip",
+        },
+        {
+          candidate_id: "cand_drop",
+          motif_type_id: "motif_local_pace",
+          motif_type_title: "慢节奏优先",
+          mode: "A",
+          injection_state: "injected",
+          transfer_confidence: 0.7,
+          constraint_text: "只在午休安排里保留。",
+          adopted_at: "2026-03-07T00:00:00.000Z",
+          application_scope: "local",
+        },
+      ],
+      feedbackEvents: [],
+      revisionRequests: [
+        {
+          request_id: "req_1",
+          motif_type_id: "motif_local_pace",
+          candidate_id: "cand_keep",
+          reason: "explicit_negation_detected",
+          detected_text: "这次不用整趟都慢节奏，只要把午休保住就行。",
+          detected_at: "2026-03-07T00:00:00.000Z",
+          status: "pending_user_choice",
+          options: ["overwrite", "new_version"],
+          suggested_action: "new_version",
+          affected_injections: [
+            {
+              candidate_id: "cand_keep",
+              motif_type_id: "motif_local_pace",
+              motif_type_title: "慢节奏优先",
+              injection_state: "injected",
+              application_scope: "trip",
+              constraint_text: "减少跨城折返，留足休整。",
+            },
+            {
+              candidate_id: "cand_drop",
+              motif_type_id: "motif_local_pace",
+              motif_type_title: "慢节奏优先",
+              injection_state: "injected",
+              application_scope: "local",
+              constraint_text: "只在午休安排里保留。",
+            },
+          ],
+        },
+      ],
+    },
+  });
+
+  fireEvent.click(screen.getByRole("button", { name: "查看 diff 并处理" }));
+  fireEvent.change(screen.getByLabelText("标题"), { target: { value: "午休优先，但不必整趟都慢" } });
+  fireEvent.change(screen.getByLabelText("复用描述"), {
+    target: { value: "保留午休和低强度时段，但不强制整趟都压低节奏。" },
+  });
+  fireEvent.click(screen.getByLabelText(/cand_drop/i));
+  fireEvent.click(screen.getByRole("button", { name: "保存为新版本" }));
+
+  expect(onReviseMotifLibrary).toHaveBeenCalledWith({
+    motifTypeId: "motif_local_pace",
+    requestId: "req_1",
+    choice: "new_version",
+    title: "午休优先，但不必整趟都慢",
+    dependency: "constraint",
+    reusableDescription: "保留午休和低强度时段，但不强制整趟都压低节奏。",
+    abstractionText: {
+      L1: "不要太赶",
+      L2: "低强度节奏优先",
+      L3: "慢节奏旅行",
+    },
+    targetCandidateIds: ["cand_keep"],
+  });
+});

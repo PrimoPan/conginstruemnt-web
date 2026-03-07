@@ -18,6 +18,7 @@ import type {
     TurnStreamErrorData,
     TravelPlanningBootstrapRequest,
     MotifTransferState,
+    MotifLibraryRevisionSummary,
 } from "../core/type";
 
 type ManualReferencePayload = {
@@ -335,6 +336,22 @@ export type MotifTransferDecisionResponse = TurnResponse & {
     motifTransferState?: MotifTransferState;
 };
 
+export type MotifTransferBatchDecisionResponse = TurnResponse & {
+    ok: boolean;
+    decisions: Array<{
+        id: string;
+        candidate_id: string;
+        action: "adopt" | "modify" | "ignore" | "confirm";
+        decision_status: "pending" | "pending_confirmation" | "adopted" | "ignored" | "revised";
+        decided_at: string;
+        revised_text?: string;
+        note?: string;
+        application_scope?: "trip" | "local";
+    }>;
+    followupQuestions?: string[];
+    motifTransferState?: MotifTransferState;
+};
+
 export type MotifTransferFeedbackResponse = TurnResponse & {
     ok: boolean;
     event: {
@@ -359,6 +376,7 @@ export type MotifLibraryConfirmResponse = TurnResponse & {
 export type MotifLibraryReviseResponse = TurnResponse & {
     ok: boolean;
     revised_entry?: unknown;
+    revision_summary?: MotifLibraryRevisionSummary;
     motifTransferState?: MotifTransferState;
 };
 
@@ -688,6 +706,41 @@ export const api = {
             token
         ),
 
+    motifTransferBatchDecision: (
+        token: string,
+        cid: string,
+        payload: {
+            items: Array<{
+                candidate_id: string;
+                action: "adopt" | "modify" | "ignore" | "confirm";
+                revised_text?: string;
+                note?: string;
+                mode_override?: "A" | "B" | "C";
+                application_scope?: "trip" | "local";
+                recommendation?: {
+                    motif_type_id: string;
+                    motif_type_title: string;
+                    dependency?: string;
+                    reusable_description?: string;
+                    source_task_id?: string;
+                    source_conversation_id?: string;
+                    status?: "active" | "uncertain" | "deprecated" | "cancelled";
+                    reason?: string;
+                    match_score?: number;
+                    recommended_mode?: "A" | "B" | "C";
+                };
+            }>;
+        }
+    ) =>
+        http<MotifTransferBatchDecisionResponse>(
+            `/api/conversations/${cid}/motif-transfer/batch-decision`,
+            {
+                method: "POST",
+                body: JSON.stringify(payload),
+            },
+            token
+        ),
+
     motifTransferFeedback: (
         token: string,
         cid: string,
@@ -745,6 +798,7 @@ export const api = {
             reusable_description?: string;
             abstraction_text?: { L1?: string; L2?: string; L3?: string };
             status?: "active" | "uncertain" | "deprecated" | "cancelled";
+            target_candidate_ids?: string[];
         }
     ) =>
         http<MotifLibraryReviseResponse>(

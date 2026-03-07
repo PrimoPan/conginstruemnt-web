@@ -233,6 +233,17 @@ type MotifEditDraft = {
     targetConceptId: string;
     causalOperator: MotifCausalOperator;
 };
+type RevisionEditDraft = {
+    title: string;
+    dependency: "enable" | "constraint" | "determine";
+    reusableDescription: string;
+    abstractionText: {
+        L1: string;
+        L2: string;
+        L3: string;
+    };
+    targetCandidateIds: string[];
+};
 type TransferApplicationScope = "trip" | "local";
 
 const USER_MOTIF_STATUS_OPTIONS: MotifLifecycleStatus[] = ["active", "disabled"];
@@ -251,6 +262,98 @@ function motifPatternFromIds(sourceIds: string[], targetId: string, conceptNoByI
         return no ? `C${no}` : cleanText(id, 16);
     };
     return `${sourceIds.map(ref).join(" + ")} -> ${ref(targetId)}`;
+}
+
+function currentLibraryVersion(entry?: MotifLibraryEntry | null) {
+    const versions = Array.isArray(entry?.versions) ? entry!.versions : [];
+    return (
+        versions.find((item) => cleanText(item?.version_id, 180) === cleanText(entry?.current_version_id, 180)) ||
+        versions[versions.length - 1] ||
+        null
+    );
+}
+
+function defaultRevisionDraft(entry?: MotifLibraryEntry | null, targetCandidateIds: string[] = []): RevisionEditDraft {
+    const current = currentLibraryVersion(entry);
+    const dependency = cleanText(current?.dependency || entry?.dependency, 40);
+    return {
+        title: cleanText(current?.title || entry?.motif_type_title, 180),
+        dependency:
+            dependency === "constraint" || dependency === "determine" || dependency === "enable"
+                ? dependency
+                : "enable",
+        reusableDescription: cleanText(current?.reusable_description || entry?.reusable_description, 260),
+        abstractionText: {
+            L1: cleanText(current?.abstraction_levels?.L1, 180),
+            L2: cleanText(current?.abstraction_levels?.L2, 180),
+            L3: cleanText(current?.abstraction_levels?.L3, 180),
+        },
+        targetCandidateIds: uniq(targetCandidateIds, 24),
+    };
+}
+
+function revisionFieldLabel(locale: AppLocale, field: "title" | "dependency" | "reusable_description" | "L1" | "L2" | "L3" | "status") {
+    if (field === "title") return tr(locale, "标题", "Title");
+    if (field === "dependency") return tr(locale, "依赖类型", "Dependency");
+    if (field === "reusable_description") return tr(locale, "复用描述", "Reusable description");
+    return field;
+}
+
+function buildRevisionDiffPreview(
+    locale: AppLocale,
+    entry: MotifLibraryEntry | undefined,
+    draft: RevisionEditDraft | undefined
+) {
+    const current = currentLibraryVersion(entry);
+    if (!draft) return [];
+    const pairs: Array<{
+        field: "title" | "dependency" | "reusable_description" | "L1" | "L2" | "L3";
+        currentValue: string;
+        nextValue: string;
+    }> = [
+        {
+            field: "title",
+            currentValue: cleanText(current?.title || entry?.motif_type_title, 180),
+            nextValue: cleanText(draft.title, 180),
+        },
+        {
+            field: "dependency",
+            currentValue: cleanText(current?.dependency || entry?.dependency, 40),
+            nextValue: cleanText(draft.dependency, 40),
+        },
+        {
+            field: "reusable_description",
+            currentValue: cleanText(current?.reusable_description || entry?.reusable_description, 260),
+            nextValue: cleanText(draft.reusableDescription, 260),
+        },
+        {
+            field: "L1",
+            currentValue: cleanText(current?.abstraction_levels?.L1, 180),
+            nextValue: cleanText(draft.abstractionText.L1, 180),
+        },
+        {
+            field: "L2",
+            currentValue: cleanText(current?.abstraction_levels?.L2, 180),
+            nextValue: cleanText(draft.abstractionText.L2, 180),
+        },
+        {
+            field: "L3",
+            currentValue: cleanText(current?.abstraction_levels?.L3, 180),
+            nextValue: cleanText(draft.abstractionText.L3, 180),
+        },
+    ];
+    return pairs
+        .filter((item) => item.currentValue !== item.nextValue)
+        .map((item) => ({
+            ...item,
+            label: revisionFieldLabel(locale, item.field),
+        }));
+}
+
+function transferInjectionStateLabel(locale: AppLocale, state?: "injected" | "pending_confirmation" | "disabled") {
+    if (state === "pending_confirmation") return tr(locale, "待确认", "Pending confirmation");
+    if (state === "disabled") return tr(locale, "已停用", "Disabled");
+    return tr(locale, "已生效", "Applied");
 }
 
 function relationFromCausalOperator(op: MotifCausalOperator): EdgeType {
@@ -313,6 +416,28 @@ export function ConceptPanel(props: {
             recommended_mode?: "A" | "B" | "C";
         };
     }) => void;
+    onTransferBatchDecision?: (params: {
+        items: Array<{
+            candidateId: string;
+            action: "adopt" | "modify" | "ignore" | "confirm";
+            revisedText?: string;
+            note?: string;
+            modeOverride?: "A" | "B" | "C";
+            applicationScope?: TransferApplicationScope;
+            recommendation?: {
+                motif_type_id: string;
+                motif_type_title: string;
+                dependency?: string;
+                reusable_description?: string;
+                source_task_id?: string;
+                source_conversation_id?: string;
+                status?: "active" | "uncertain" | "deprecated" | "cancelled";
+                reason?: string;
+                match_score?: number;
+                recommended_mode?: "A" | "B" | "C";
+            };
+        }>;
+    }) => void;
     onTransferFeedback?: (params: {
         signal: "thumbs_down" | "retry" | "manual_override" | "explicit_not_applicable";
         signalText?: string;
@@ -323,6 +448,11 @@ export function ConceptPanel(props: {
         motifTypeId: string;
         choice: "overwrite" | "new_version";
         requestId?: string;
+        title?: string;
+        dependency?: string;
+        reusableDescription?: string;
+        abstractionText?: { L1?: string; L2?: string; L3?: string };
+        targetCandidateIds?: string[];
     }) => void;
     onModeCReference?: (params: {
         motifTypeId: string;
@@ -365,6 +495,7 @@ export function ConceptPanel(props: {
         onPatchConcept,
         onPatchMotif,
         onTransferDecision,
+        onTransferBatchDecision,
         onTransferFeedback,
         onReviseMotifLibrary,
         onModeCReference,
@@ -376,6 +507,9 @@ export function ConceptPanel(props: {
     const [editingCandidateId, setEditingCandidateId] = useState("");
     const [editingCandidateText, setEditingCandidateText] = useState("");
     const [candidateScopeById, setCandidateScopeById] = useState<Record<string, TransferApplicationScope>>({});
+    const [selectedTransferIds, setSelectedTransferIds] = useState<Record<string, boolean>>({});
+    const [editingRevisionRequestId, setEditingRevisionRequestId] = useState("");
+    const [revisionDraftsByRequestId, setRevisionDraftsByRequestId] = useState<Record<string, RevisionEditDraft>>({});
 
     const conceptById = useMemo(() => new Map((concepts || []).map((c) => [c.id, c])), [concepts]);
     const conceptNoById = useMemo(() => {
@@ -459,6 +593,10 @@ export function ConceptPanel(props: {
         () => (motifTransferState?.revisionRequests || []).filter((x) => x.status === "pending_user_choice"),
         [motifTransferState]
     );
+    const motifLibraryByTypeId = useMemo(
+        () => new Map((motifLibrary || []).map((entry) => [cleanText(entry.motif_type_id, 180), entry])),
+        [motifLibrary]
+    );
     const injectedCandidateSet = useMemo(
         () =>
             new Set(
@@ -472,10 +610,7 @@ export function ConceptPanel(props: {
         () =>
             (motifLibrary || [])
                 .map((entry) => {
-                    const versions = Array.isArray(entry?.versions) ? entry.versions : [];
-                    const current =
-                        versions.find((v) => cleanText(v?.version_id, 180) === cleanText(entry?.current_version_id, 180)) ||
-                        versions[versions.length - 1];
+                    const current = currentLibraryVersion(entry);
                     const description = cleanText(
                         current?.reusable_description || entry?.reusable_description || current?.title || entry?.motif_type_title,
                         240
@@ -509,6 +644,23 @@ export function ConceptPanel(props: {
                 .slice(0, 8),
         [motifLibrary, transferRecommendations]
     );
+    const queuedRecommendations = pendingRecommendations.filter((rec) => {
+        const injection = injectionByCandidateId.get(cleanText(rec.candidate_id, 220));
+        return injection?.injection_state === "pending_confirmation";
+    });
+    const reviewableRecommendations = pendingRecommendations.filter((rec) => {
+        const injection = injectionByCandidateId.get(cleanText(rec.candidate_id, 220));
+        return injection?.injection_state !== "pending_confirmation";
+    });
+    const selectedTransferCandidateIds = Object.entries(selectedTransferIds)
+        .filter(([, checked]) => checked)
+        .map(([candidateId]) => candidateId);
+    const selectedReviewableRecommendations = reviewableRecommendations.filter((rec) =>
+        selectedTransferCandidateIds.includes(rec.candidate_id)
+    );
+    const selectedQueuedRecommendations = queuedRecommendations.filter((rec) =>
+        selectedTransferCandidateIds.includes(rec.candidate_id)
+    );
 
     const conceptSelectOptions = useMemo(
         () =>
@@ -522,6 +674,66 @@ export function ConceptPanel(props: {
     const resetMotifEditor = () => {
         setEditingMotifId("");
         setEditingMotifDraft(null);
+    };
+
+    const clearTransferSelection = (candidateIds?: string[]) => {
+        setSelectedTransferIds((prev) => {
+            if (!candidateIds?.length) return {};
+            const next = { ...prev };
+            for (const candidateId of candidateIds) delete next[candidateId];
+            return next;
+        });
+    };
+
+    const recommendationPayload = (rec: MotifTransferState["recommendations"][number]) => ({
+        motif_type_id: rec.motif_type_id,
+        motif_type_title: rec.motif_type_title,
+        dependency: rec.dependency,
+        reusable_description: rec.reusable_description,
+        source_task_id: rec.source_task_id,
+        source_conversation_id: rec.source_conversation_id,
+        status: rec.status,
+        reason: rec.reason,
+        match_score: rec.match_score,
+        recommended_mode: rec.recommended_mode,
+    });
+
+    const startRevisionEdit = (requestId: string) => {
+        const request = pendingRevisionRequests.find((item) => item.request_id === requestId);
+        if (!request) return;
+        setRevisionDraftsByRequestId((prev) => {
+            if (prev[requestId]) return prev;
+            return {
+                ...prev,
+                [requestId]: defaultRevisionDraft(
+                    motifLibraryByTypeId.get(cleanText(request.motif_type_id, 180)),
+                    (request.affected_injections || []).map((item) => cleanText(item.candidate_id, 220))
+                ),
+            };
+        });
+        setEditingRevisionRequestId(requestId);
+    };
+
+    const patchRevisionDraft = (
+        requestId: string,
+        patch:
+            | Partial<RevisionEditDraft>
+            | ((current: RevisionEditDraft) => RevisionEditDraft)
+    ) => {
+        setRevisionDraftsByRequestId((prev) => {
+            const current =
+                prev[requestId] ||
+                defaultRevisionDraft(
+                    motifLibraryByTypeId.get(
+                        cleanText(
+                            pendingRevisionRequests.find((item) => item.request_id === requestId)?.motif_type_id,
+                            180
+                        )
+                    )
+                );
+            const next = typeof patch === "function" ? patch(current) : { ...current, ...patch };
+            return { ...prev, [requestId]: next };
+        });
     };
 
     const startMotifEdit = (m: ConceptMotif) => {
@@ -708,11 +920,119 @@ export function ConceptPanel(props: {
                     </div>
                 ) : null}
 
-                {transferRecommendationsEnabled && tab === "motif" && transferRecommendations.length ? (
+                {transferRecommendationsEnabled &&
+                tab === "motif" &&
+                (transferRecommendations.length || pendingRevisionRequests.length) ? (
                     <div className="TransferSuggestions">
                         <div className="TransferSuggestions__title">
-                            {tr(locale, "这次可能可以沿用的思路", "Ideas you may want to carry into this trip")}
+                            {pendingRevisionRequests.length && !transferRecommendations.length
+                                ? tr(locale, "历史思路修订", "Past pattern revisions")
+                                : tr(locale, "这次可能可以沿用的思路", "Ideas you may want to carry into this trip")}
                         </div>
+                        {pendingRecommendations.length > 1 ? (
+                            <div className="TransferSuggestions__batch">
+                                <div className="TransferSuggestions__batchSummary">
+                                    {tr(
+                                        locale,
+                                        `已选 ${selectedTransferCandidateIds.length} 条；待加入待确认 ${reviewableRecommendations.length} 条；待最终确认 ${queuedRecommendations.length} 条。`,
+                                        `${selectedTransferCandidateIds.length} selected; ${reviewableRecommendations.length} ready to queue; ${queuedRecommendations.length} awaiting final confirmation.`
+                                    )}
+                                </div>
+                                <div className="TransferSuggestions__actions">
+                                    <button
+                                        type="button"
+                                        className="Btn FlowToolbar__btn"
+                                        onClick={() =>
+                                            setSelectedTransferIds(
+                                                Object.fromEntries(
+                                                    pendingRecommendations.slice(0, 4).map((rec) => [rec.candidate_id, true])
+                                                )
+                                            )
+                                        }
+                                    >
+                                        {tr(locale, "全选当前建议", "Select visible suggestions")}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className="Btn FlowToolbar__btn"
+                                        onClick={() => clearTransferSelection()}
+                                    >
+                                        {tr(locale, "清空选择", "Clear selection")}
+                                    </button>
+                                    {selectedReviewableRecommendations.length ? (
+                                        <button
+                                            type="button"
+                                            className="Btn FlowToolbar__btn Btn--active"
+                                            onClick={() => {
+                                                onTransferBatchDecision?.({
+                                                    items: selectedReviewableRecommendations.map((rec) => ({
+                                                        candidateId: rec.candidate_id,
+                                                        action: "adopt",
+                                                        applicationScope: candidateScopeById[rec.candidate_id] || "trip",
+                                                        recommendation: recommendationPayload(rec),
+                                                    })),
+                                                });
+                                            }}
+                                        >
+                                            {tr(locale, "批量加入待确认", "Queue selected")}
+                                        </button>
+                                    ) : null}
+                                    {selectedReviewableRecommendations.length ? (
+                                        <button
+                                            type="button"
+                                            className="Btn FlowToolbar__btn"
+                                            onClick={() => {
+                                                onTransferBatchDecision?.({
+                                                    items: selectedReviewableRecommendations.map((rec) => ({
+                                                        candidateId: rec.candidate_id,
+                                                        action: "ignore",
+                                                        recommendation: recommendationPayload(rec),
+                                                    })),
+                                                });
+                                                clearTransferSelection(selectedReviewableRecommendations.map((rec) => rec.candidate_id));
+                                            }}
+                                        >
+                                            {tr(locale, "批量跳过", "Skip selected")}
+                                        </button>
+                                    ) : null}
+                                    {selectedQueuedRecommendations.length ? (
+                                        <button
+                                            type="button"
+                                            className="Btn FlowToolbar__btn Btn--active"
+                                            onClick={() => {
+                                                onTransferBatchDecision?.({
+                                                    items: selectedQueuedRecommendations.map((rec) => ({
+                                                        candidateId: rec.candidate_id,
+                                                        action: "confirm",
+                                                    })),
+                                                });
+                                                clearTransferSelection(selectedQueuedRecommendations.map((rec) => rec.candidate_id));
+                                            }}
+                                        >
+                                            {tr(locale, "批量确认沿用", "Confirm selected")}
+                                        </button>
+                                    ) : null}
+                                    {selectedQueuedRecommendations.length ? (
+                                        <button
+                                            type="button"
+                                            className="Btn FlowToolbar__btn"
+                                            onClick={() => {
+                                                onTransferBatchDecision?.({
+                                                    items: selectedQueuedRecommendations.map((rec) => ({
+                                                        candidateId: rec.candidate_id,
+                                                        action: "ignore",
+                                                        recommendation: recommendationPayload(rec),
+                                                    })),
+                                                });
+                                                clearTransferSelection(selectedQueuedRecommendations.map((rec) => rec.candidate_id));
+                                            }}
+                                        >
+                                            {tr(locale, "批量先不沿用", "Do not apply selected")}
+                                        </button>
+                                    ) : null}
+                                </div>
+                            </div>
+                        ) : null}
                         {pendingRecommendations.slice(0, 4).map((rec) => {
                             const score = Math.round(Math.max(0, Math.min(1, Number(rec.match_score || 0))) * 100);
                             const isEditing = editingCandidateId === rec.candidate_id;
@@ -723,6 +1043,24 @@ export function ConceptPanel(props: {
                             return (
                                 <div key={rec.candidate_id} className="TransferSuggestions__item">
                                     <div className="TransferSuggestions__head">
+                                        <label className="TransferSuggestions__select">
+                                            <input
+                                                type="checkbox"
+                                                checked={!!selectedTransferIds[rec.candidate_id]}
+                                                onChange={(e) =>
+                                                    setSelectedTransferIds((prev) => ({
+                                                        ...prev,
+                                                        [rec.candidate_id]: e.target.checked,
+                                                    }))
+                                                }
+                                                aria-label={tr(
+                                                    locale,
+                                                    `选择 ${rec.motif_type_title} 进入批量审阅`,
+                                                    `Select ${rec.motif_type_title} for batch review`
+                                                )}
+                                            />
+                                            <span>{tr(locale, "批量", "Batch")}</span>
+                                        </label>
                                         <span className="TransferSuggestions__badge">📚 {tr(locale, "历史", "Past")}</span>
                                         <span className="TransferSuggestions__name">{rec.motif_type_title}</span>
                                         <span className="TransferSuggestions__meta">
@@ -760,13 +1098,15 @@ export function ConceptPanel(props: {
                                             <button
                                                 type="button"
                                                 className="Btn FlowToolbar__btn"
-                                                onClick={() =>
+                                                onClick={() => {
+                                                    clearTransferSelection([rec.candidate_id]);
                                                     onTransferDecision?.({
                                                         candidateId: rec.candidate_id,
                                                         action: "adopt",
                                                         applicationScope: selectedScope,
-                                                    })
-                                                }
+                                                        recommendation: recommendationPayload(rec),
+                                                    });
+                                                }}
                                             >
                                                 {tr(locale, "先加入待确认", "Queue for confirmation")}
                                             </button>
@@ -787,6 +1127,7 @@ export function ConceptPanel(props: {
                                                     onTransferDecision?.({
                                                         candidateId: rec.candidate_id,
                                                         action: "ignore",
+                                                        recommendation: recommendationPayload(rec),
                                                     })
                                                 }
                                             >
@@ -814,6 +1155,7 @@ export function ConceptPanel(props: {
                                                     onTransferDecision?.({
                                                         candidateId: rec.candidate_id,
                                                         action: "ignore",
+                                                        recommendation: recommendationPayload(rec),
                                                     })
                                                 }
                                             >
@@ -870,7 +1212,9 @@ export function ConceptPanel(props: {
                                                             action: "modify",
                                                             revisedText: editingCandidateText,
                                                             applicationScope: selectedScope,
+                                                            recommendation: recommendationPayload(rec),
                                                         });
+                                                        clearTransferSelection([rec.candidate_id]);
                                                         setEditingCandidateId("");
                                                         setEditingCandidateText("");
                                                     }}
@@ -916,39 +1260,223 @@ export function ConceptPanel(props: {
                                 <div className="TransferSuggestions__title">
                                     {tr(locale, "这条旧思路可能需要更新", "This past pattern may need updating")}
                                 </div>
-                                {pendingRevisionRequests.map((req) => (
-                                    <div key={req.request_id} className="TransferSuggestions__revisionItem">
-                                        <div>{req.detected_text || req.reason}</div>
-                                        <div className="TransferSuggestions__actions">
-                                            <button
-                                                type="button"
-                                                className="Btn FlowToolbar__btn"
-                                                onClick={() =>
-                                                    onReviseMotifLibrary?.({
-                                                        motifTypeId: req.motif_type_id,
-                                                        requestId: req.request_id,
-                                                        choice: "overwrite",
-                                                    })
-                                                }
-                                            >
-                                                {tr(locale, "直接更新旧思路", "Update old pattern")}
-                                            </button>
-                                            <button
-                                                type="button"
-                                                className="Btn FlowToolbar__btn"
-                                                onClick={() =>
-                                                    onReviseMotifLibrary?.({
-                                                        motifTypeId: req.motif_type_id,
-                                                        requestId: req.request_id,
-                                                        choice: "new_version",
-                                                    })
-                                                }
-                                            >
-                                                {tr(locale, "另存为新思路", "Save as new pattern")}
-                                            </button>
+                                {pendingRevisionRequests.map((req) => {
+                                    const entry = motifLibraryByTypeId.get(cleanText(req.motif_type_id, 180));
+                                    const draft =
+                                        revisionDraftsByRequestId[req.request_id] ||
+                                        defaultRevisionDraft(
+                                            entry,
+                                            (req.affected_injections || []).map((item) => cleanText(item.candidate_id, 220))
+                                        );
+                                    const isEditingRevision = editingRevisionRequestId === req.request_id;
+                                    const impacts = req.affected_injections || [];
+                                    const diffPreview = buildRevisionDiffPreview(locale, entry, draft);
+                                    const selectedTargets = uniq(draft.targetCandidateIds, 24);
+                                    const canSubmit = impacts.length ? selectedTargets.length > 0 : true;
+                                    return (
+                                        <div key={req.request_id} className="TransferSuggestions__revisionItem">
+                                            <div>{req.detected_text || req.reason}</div>
+                                            <div className="TransferSuggestions__batchSummary">
+                                                {tr(
+                                                    locale,
+                                                    `将影响当前任务中的 ${impacts.length} 条沿用规则${impacts.length > 2 ? "，需要先审阅 propagation diff。" : "。可选择只传播到其中一部分。"} `,
+                                                    `This would affect ${impacts.length} active transferred rules in the current task${impacts.length > 2 ? ", so review the propagation diff first." : ". You can propagate it to only some of them."}`
+                                                )}
+                                            </div>
+                                            {!isEditingRevision ? (
+                                                <div className="TransferSuggestions__actions">
+                                                    <button
+                                                        type="button"
+                                                        className="Btn FlowToolbar__btn Btn--active"
+                                                        onClick={() => startRevisionEdit(req.request_id)}
+                                                    >
+                                                        {tr(locale, "查看 diff 并处理", "Review diff")}
+                                                    </button>
+                                                </div>
+                                            ) : (
+                                                <div className="TransferSuggestions__edit">
+                                                    <label className="FlowInspector__fieldLabel">
+                                                        {tr(locale, "标题", "Title")}
+                                                        <input
+                                                            className="FlowInspector__input"
+                                                            value={draft.title}
+                                                            onChange={(e) =>
+                                                                patchRevisionDraft(req.request_id, { title: e.target.value })
+                                                            }
+                                                        />
+                                                    </label>
+                                                    <label className="FlowInspector__fieldLabel">
+                                                        {tr(locale, "依赖类型", "Dependency")}
+                                                        <select
+                                                            className="FlowInspector__select"
+                                                            value={draft.dependency}
+                                                            onChange={(e) =>
+                                                                patchRevisionDraft(req.request_id, {
+                                                                    dependency: e.target.value as RevisionEditDraft["dependency"],
+                                                                })
+                                                            }
+                                                        >
+                                                            {["enable", "constraint", "determine"].map((value) => (
+                                                                <option key={`${req.request_id}_${value}`} value={value}>
+                                                                    {relationLabel(locale, value)}
+                                                                </option>
+                                                            ))}
+                                                        </select>
+                                                    </label>
+                                                    <label className="FlowInspector__fieldLabel">
+                                                        {tr(locale, "复用描述", "Reusable description")}
+                                                        <textarea
+                                                            className="FlowInspector__editor"
+                                                            value={draft.reusableDescription}
+                                                            onChange={(e) =>
+                                                                patchRevisionDraft(req.request_id, {
+                                                                    reusableDescription: e.target.value,
+                                                                })
+                                                            }
+                                                        />
+                                                    </label>
+                                                    <div className="FlowInspector__fieldGrid">
+                                                        {(["L1", "L2", "L3"] as const).map((level) => (
+                                                            <label key={`${req.request_id}_${level}`} className="FlowInspector__fieldLabel">
+                                                                {level}
+                                                                <input
+                                                                    className="FlowInspector__input"
+                                                                    value={draft.abstractionText[level]}
+                                                                    onChange={(e) =>
+                                                                        patchRevisionDraft(req.request_id, (current) => ({
+                                                                            ...current,
+                                                                            abstractionText: {
+                                                                                ...current.abstractionText,
+                                                                                [level]: e.target.value,
+                                                                            },
+                                                                        }))
+                                                                    }
+                                                                />
+                                                            </label>
+                                                        ))}
+                                                    </div>
+                                                    {impacts.length ? (
+                                                        <div className="TransferSuggestions__impactList">
+                                                            <div className="TransferSuggestions__batchSummary">
+                                                                {tr(locale, "选择要传播到哪些当前沿用项", "Choose which current injections to propagate")}
+                                                            </div>
+                                                            {impacts.map((impact) => {
+                                                                const checked = selectedTargets.includes(cleanText(impact.candidate_id, 220));
+                                                                return (
+                                                                    <label
+                                                                        key={`${req.request_id}_${impact.candidate_id}`}
+                                                                        className="TransferSuggestions__impactItem"
+                                                                    >
+                                                                        <input
+                                                                            type="checkbox"
+                                                                            checked={checked}
+                                                                            aria-label={tr(
+                                                                                locale,
+                                                                                `传播到 ${impact.candidate_id}`,
+                                                                                `Propagate to ${impact.candidate_id}`
+                                                                            )}
+                                                                            onChange={(e) =>
+                                                                                patchRevisionDraft(req.request_id, (current) => ({
+                                                                                    ...current,
+                                                                                    targetCandidateIds: e.target.checked
+                                                                                        ? uniq(
+                                                                                              [
+                                                                                                  ...current.targetCandidateIds,
+                                                                                                  impact.candidate_id,
+                                                                                              ],
+                                                                                              24
+                                                                                          )
+                                                                                        : current.targetCandidateIds.filter(
+                                                                                              (item) => item !== impact.candidate_id
+                                                                                          ),
+                                                                                }))
+                                                                            }
+                                                                        />
+                                                                        <span>
+                                                                            {impact.motif_type_title} · {transferScopeLabel(locale, impact.application_scope)} ·{" "}
+                                                                            {transferInjectionStateLabel(locale, impact.injection_state)}
+                                                                        </span>
+                                                                        <span className="TransferSuggestions__meta">{impact.constraint_text}</span>
+                                                                    </label>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    ) : null}
+                                                    <div className="TransferSuggestions__diffList">
+                                                        <div className="TransferSuggestions__batchSummary">
+                                                            {tr(locale, "本次 revision diff", "Revision diff preview")}
+                                                        </div>
+                                                        {diffPreview.length ? (
+                                                            diffPreview.map((item) => (
+                                                                <div
+                                                                    key={`${req.request_id}_${item.field}`}
+                                                                    className="TransferSuggestions__diffItem"
+                                                                >
+                                                                    <strong>{item.label}</strong>
+                                                                    <span>
+                                                                        {cleanText(item.currentValue, 120) || tr(locale, "空", "Empty")} →{" "}
+                                                                        {cleanText(item.nextValue, 120) || tr(locale, "空", "Empty")}
+                                                                    </span>
+                                                                </div>
+                                                            ))
+                                                        ) : (
+                                                            <div className="TransferSuggestions__meta">
+                                                                {tr(locale, "当前没有字段变化。", "No field changes yet.")}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    <div className="TransferSuggestions__actions">
+                                                        <button
+                                                            type="button"
+                                                            className="Btn FlowToolbar__btn"
+                                                            onClick={() => setEditingRevisionRequestId("")}
+                                                        >
+                                                            {tr(locale, "取消", "Cancel")}
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            className="Btn FlowToolbar__btn"
+                                                            disabled={!canSubmit}
+                                                            onClick={() =>
+                                                                onReviseMotifLibrary?.({
+                                                                    motifTypeId: req.motif_type_id,
+                                                                    requestId: req.request_id,
+                                                                    choice: "overwrite",
+                                                                    title: draft.title,
+                                                                    dependency: draft.dependency,
+                                                                    reusableDescription: draft.reusableDescription,
+                                                                    abstractionText: draft.abstractionText,
+                                                                    targetCandidateIds: selectedTargets,
+                                                                })
+                                                            }
+                                                        >
+                                                            {tr(locale, "覆盖旧思路", "Overwrite old pattern")}
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            className="Btn FlowToolbar__btn Btn--active"
+                                                            disabled={!canSubmit}
+                                                            onClick={() =>
+                                                                onReviseMotifLibrary?.({
+                                                                    motifTypeId: req.motif_type_id,
+                                                                    requestId: req.request_id,
+                                                                    choice: "new_version",
+                                                                    title: draft.title,
+                                                                    dependency: draft.dependency,
+                                                                    reusableDescription: draft.reusableDescription,
+                                                                    abstractionText: draft.abstractionText,
+                                                                    targetCandidateIds: selectedTargets,
+                                                                })
+                                                            }
+                                                        >
+                                                            {tr(locale, "保存为新版本", "Save as new version")}
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            )}
                                         </div>
-                                    </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         ) : null}
                     </div>
