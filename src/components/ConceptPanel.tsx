@@ -6,6 +6,7 @@ import type {
     ConceptMotif,
     ContextItem,
     EdgeType,
+    MotifLink,
     MotifCausalOperator,
     MotifLifecycleStatus,
     MotifTransferState,
@@ -244,6 +245,22 @@ type RevisionEditDraft = {
     };
     targetCandidateIds: string[];
 };
+type RevisionStructureNodePreview = {
+    motifId: string;
+    title: string;
+    dependency: EdgeType;
+    pattern: string;
+    status: string;
+    role: "focus" | "downstream" | "upstream";
+    note: string;
+};
+type RevisionStructureEdgePreview = {
+    id: string;
+    fromTitle: string;
+    toTitle: string;
+    type: MotifLink["type"];
+    note?: string;
+};
 type TransferApplicationScope = "trip" | "local";
 
 const USER_MOTIF_STATUS_OPTIONS: MotifLifecycleStatus[] = ["active", "disabled"];
@@ -356,6 +373,193 @@ function transferInjectionStateLabel(locale: AppLocale, state?: "injected" | "pe
     return tr(locale, "已生效", "Applied");
 }
 
+function motifLinkTypeLabel(locale: AppLocale, type: MotifLink["type"]) {
+    if (type === "supports") return tr(locale, "支持", "Supports");
+    if (type === "precedes") return tr(locale, "前置", "Precedes");
+    if (type === "refines") return tr(locale, "细化", "Refines");
+    return tr(locale, "冲突", "Conflicts");
+}
+
+function buildRevisionStructurePreview(params: {
+    locale: AppLocale;
+    request: MotifTransferState["revisionRequests"][number];
+    draft: RevisionEditDraft;
+    motifs: ConceptMotif[];
+    motifLinks: MotifLink[];
+    conceptById: Map<string, ConceptItem>;
+    conceptNoById: Map<string, number>;
+}) {
+    const motifTypeId = cleanText(params.request.motif_type_id, 180);
+    const focusMotifs = (params.motifs || []).filter(
+        (motif) => cleanText(motif.motif_type_id, 180) === motifTypeId
+    );
+    if (!focusMotifs.length) return null;
+
+    const motifById = new Map((params.motifs || []).map((motif) => [cleanText(motif.id, 120), motif]));
+    const outgoing = new Map<string, MotifLink[]>();
+    const incoming = new Map<string, MotifLink[]>();
+    for (const link of params.motifLinks || []) {
+        const fromId = cleanText(link.fromMotifId, 120);
+        const toId = cleanText(link.toMotifId, 120);
+        if (!fromId || !toId) continue;
+        if (!outgoing.has(fromId)) outgoing.set(fromId, []);
+        if (!incoming.has(toId)) incoming.set(toId, []);
+        outgoing.get(fromId)!.push(link);
+        incoming.get(toId)!.push(link);
+    }
+
+    const includedIds = new Set<string>();
+    const roleById = new Map<string, RevisionStructureNodePreview["role"]>();
+    const hopById = new Map<string, number>();
+    const directDownstream = new Set<string>();
+    const directUpstream = new Set<string>();
+    const queue: Array<{ id: string; depth: number }> = [];
+
+    for (const motif of focusMotifs.slice(0, 6)) {
+        const motifId = cleanText(motif.id, 120);
+        includedIds.add(motifId);
+        roleById.set(motifId, "focus");
+        hopById.set(motifId, 0);
+        queue.push({ id: motifId, depth: 0 });
+        for (const link of incoming.get(motifId) || []) {
+            const fromId = cleanText(link.fromMotifId, 120);
+            if (!fromId || includedIds.has(fromId) || !motifById.has(fromId) || includedIds.size >= 14) continue;
+            includedIds.add(fromId);
+            roleById.set(fromId, "upstream");
+            hopById.set(fromId, -1);
+            directUpstream.add(fromId);
+        }
+    }
+
+    while (queue.length && includedIds.size < 14) {
+        const current = queue.shift()!;
+        if (current.depth >= 2) continue;
+        for (const link of outgoing.get(current.id) || []) {
+            const nextId = cleanText(link.toMotifId, 120);
+            if (!nextId || includedIds.has(nextId) || !motifById.has(nextId)) continue;
+            includedIds.add(nextId);
+            roleById.set(nextId, "downstream");
+            hopById.set(nextId, current.depth + 1);
+            if (current.depth === 0) directDownstream.add(nextId);
+            queue.push({ id: nextId, depth: current.depth + 1 });
+            if (includedIds.size >= 14) break;
+        }
+    }
+
+    const includedLinks = (params.motifLinks || []).filter(
+        (link) => includedIds.has(cleanText(link.fromMotifId, 120)) && includedIds.has(cleanText(link.toMotifId, 120))
+    );
+    const changedTitle = cleanText(params.draft.title, 180) !== cleanText(focusMotifs[0]?.title, 180);
+    const totalImpacts = (params.request.affected_injections || []).length;
+    const selectedImpacts = uniq(params.draft.targetCandidateIds, 24);
+    const selectedCount = selectedImpacts.length || totalImpacts;
+    const fullReview = directDownstream.size > 2;
+
+    const beforeNodes = Array.from(includedIds)
+        .map((motifId) => {
+            const motif = motifById.get(motifId)!;
+            return {
+                motifId,
+                title: motifHeadline(params.locale, motif, params.conceptNoById, params.conceptById),
+                dependency:
+                    cleanText(motif.dependencyClass || motif.relation, 40) === "constraint" ||
+                    cleanText(motif.dependencyClass || motif.relation, 40) === "determine" ||
+                    cleanText(motif.dependencyClass || motif.relation, 40) === "conflicts_with"
+                        ? (cleanText(motif.dependencyClass || motif.relation, 40) as EdgeType)
+                        : "enable",
+                pattern: motifPatternFromIds(
+                    uniq((motif.roles?.sources || motif.conceptIds || []).map((id) => cleanText(id, 100)).filter((id) => id !== motif.anchorConceptId), 6),
+                    cleanText(motif.anchorConceptId || motif.roles?.target, 100),
+                    params.conceptNoById
+                ),
+                status: motifStatusLabel(params.locale, motif.status),
+                role: roleById.get(motifId) || "downstream",
+                note:
+                    roleById.get(motifId) === "focus"
+                        ? tr(params.locale, "当前正在沿用的 motif 实例。", "Current motif instance being revised.")
+                        : roleById.get(motifId) === "upstream"
+                        ? tr(params.locale, "这是会驱动该 motif 的上游结构。", "This is upstream context feeding the motif.")
+                        : tr(params.locale, "这是当前任务中的下游依赖结构。", "This is downstream reasoning in the current task."),
+            };
+        })
+        .sort((a, b) => (a.role === "focus" ? -1 : 0) - (b.role === "focus" ? -1 : 0) || a.title.localeCompare(b.title));
+
+    const afterNodes = beforeNodes.map((node) => {
+        if (node.role === "focus") {
+            const fromDep = cleanText(node.dependency, 40);
+            const toDep = cleanText(params.draft.dependency, 40);
+            const depChanged =
+                toDep === "constraint" || toDep === "determine" || toDep === "conflicts_with" || toDep === "enable"
+                    ? toDep !== fromDep
+                    : false;
+            return {
+                ...node,
+                title: changedTitle ? cleanText(params.draft.title, 180) : node.title,
+                dependency:
+                    params.draft.dependency === "constraint" ||
+                    params.draft.dependency === "determine"
+                        ? (params.draft.dependency as EdgeType)
+                        : "enable",
+                note: depChanged
+                    ? tr(
+                          params.locale,
+                          `依赖类型将从 ${relationLabel(params.locale, node.dependency)} 调整为 ${relationLabel(params.locale, params.draft.dependency)}。`,
+                          `Dependency changes from ${relationLabel(params.locale, node.dependency)} to ${relationLabel(params.locale, params.draft.dependency)}.`
+                      )
+                    : tr(
+                          params.locale,
+                          `结构描述会更新，并传播到 ${selectedCount}/${Math.max(1, totalImpacts)} 个当前沿用项。`,
+                          `Description updates will propagate to ${selectedCount}/${Math.max(1, totalImpacts)} current injections.`
+                      ),
+            };
+        }
+        if (!selectedCount) {
+            return {
+                ...node,
+                note: tr(params.locale, "当前未选中任何传播目标，下游结构暂不变。", "No propagation target selected, so downstream stays unchanged."),
+            };
+        }
+        const hop = hopById.get(node.motifId) || 0;
+        return {
+            ...node,
+            note:
+                hop <= 1
+                    ? fullReview
+                        ? tr(params.locale, "上游 motif 修改后，这条下游结构需要完整复审。", "This downstream structure needs full review after the upstream revision.")
+                        : tr(params.locale, "上游 motif 修改后，这条下游结构需要重新检查。", "This downstream structure needs re-check after the upstream revision.")
+                    : tr(params.locale, "如果上游复审通过，这条更远的推理链也可能跟着调整。", "If upstream review changes, this farther reasoning chain may shift as well."),
+        };
+    });
+
+    const edges: RevisionStructureEdgePreview[] = includedLinks.slice(0, 16).map((link) => {
+        const from = beforeNodes.find((node) => node.motifId === cleanText(link.fromMotifId, 120));
+        const to = beforeNodes.find((node) => node.motifId === cleanText(link.toMotifId, 120));
+        const touchesFocus = from?.role === "focus" || to?.role === "focus";
+        return {
+            id: link.id,
+            fromTitle: from?.title || cleanText(link.fromMotifId, 60),
+            toTitle: to?.title || cleanText(link.toMotifId, 60),
+            type: link.type,
+            note:
+                touchesFocus && selectedCount
+                    ? fullReview
+                        ? tr(params.locale, "需在 revision 后重新确认这条结构关系。", "Reconfirm this structural relation after revision.")
+                        : tr(params.locale, "上游变更后重新检查此关系。", "Re-check this relation after the upstream change.")
+                    : undefined,
+        };
+    });
+
+    return {
+        beforeNodes,
+        afterNodes,
+        edges,
+        downstreamCount: directDownstream.size,
+        fullReview,
+        selectedCount,
+        totalImpacts,
+    };
+}
+
 function relationFromCausalOperator(op: MotifCausalOperator): EdgeType {
     if (op === "confounding") return "constraint";
     if (op === "intervention") return "determine";
@@ -381,6 +585,7 @@ export function ConceptPanel(props: {
     locale: AppLocale;
     concepts: ConceptItem[];
     motifs: ConceptMotif[];
+    motifLinks?: MotifLink[];
     motifTransferState?: MotifTransferState | null;
     transferRecommendationsEnabled?: boolean;
     transferReviewStage?: "ready" | "fresh_task" | "awaiting_first_turn_review" | "no_transfer_match" | null;
@@ -479,6 +684,7 @@ export function ConceptPanel(props: {
         locale,
         concepts,
         motifs,
+        motifLinks,
         motifTransferState,
         transferRecommendationsEnabled,
         transferReviewStage,
@@ -1271,6 +1477,15 @@ export function ConceptPanel(props: {
                                     const isEditingRevision = editingRevisionRequestId === req.request_id;
                                     const impacts = req.affected_injections || [];
                                     const diffPreview = buildRevisionDiffPreview(locale, entry, draft);
+                                    const structurePreview = buildRevisionStructurePreview({
+                                        locale,
+                                        request: req,
+                                        draft,
+                                        motifs,
+                                        motifLinks: motifLinks || [],
+                                        conceptById,
+                                        conceptNoById,
+                                    });
                                     const selectedTargets = uniq(draft.targetCandidateIds, 24);
                                     const canSubmit = impacts.length ? selectedTargets.length > 0 : true;
                                     return (
@@ -1425,6 +1640,84 @@ export function ConceptPanel(props: {
                                                             </div>
                                                         )}
                                                     </div>
+                                                    {structurePreview ? (
+                                                        <div className="TransferSuggestions__structure">
+                                                            <div className="TransferSuggestions__batchSummary">
+                                                                {structurePreview.fullReview
+                                                                    ? tr(
+                                                                          locale,
+                                                                          `这次改动会触达 ${structurePreview.downstreamCount} 条下游 motif，触发完整结构复审。`,
+                                                                          `This change reaches ${structurePreview.downstreamCount} downstream motifs, so a full structure review is required.`
+                                                                      )
+                                                                    : tr(
+                                                                          locale,
+                                                                          "这次改动会影响当前 reasoning graph，可先看 before/after 结构差异。",
+                                                                          "This change affects the current reasoning graph. Review the before/after structure first."
+                                                                      )}
+                                                            </div>
+                                                            <div className="TransferSuggestions__structureGrid">
+                                                                <div className="TransferSuggestions__structureCol">
+                                                                    <div className="TransferSuggestions__structureTitle">
+                                                                        {tr(locale, "Before", "Before")}
+                                                                    </div>
+                                                                    {structurePreview.beforeNodes.map((node) => (
+                                                                        <div
+                                                                            key={`${req.request_id}_before_${node.motifId}`}
+                                                                            className="TransferSuggestions__structureNode"
+                                                                        >
+                                                                            <strong>{node.title}</strong>
+                                                                            <span>
+                                                                                {relationLabel(locale, node.dependency)} · {node.status}
+                                                                            </span>
+                                                                            <span>{node.pattern}</span>
+                                                                            <span className="TransferSuggestions__meta">{node.note}</span>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                                <div className="TransferSuggestions__structureCol">
+                                                                    <div className="TransferSuggestions__structureTitle">
+                                                                        {tr(locale, "After", "After")}
+                                                                    </div>
+                                                                    {structurePreview.afterNodes.map((node) => (
+                                                                        <div
+                                                                            key={`${req.request_id}_after_${node.motifId}`}
+                                                                            className="TransferSuggestions__structureNode"
+                                                                        >
+                                                                            <strong>{node.title}</strong>
+                                                                            <span>
+                                                                                {relationLabel(locale, node.dependency)} · {node.status}
+                                                                            </span>
+                                                                            <span>{node.pattern}</span>
+                                                                            <span className="TransferSuggestions__meta">{node.note}</span>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            </div>
+                                                            {structurePreview.edges.length ? (
+                                                                <div className="TransferSuggestions__structureEdges">
+                                                                    <div className="TransferSuggestions__structureTitle">
+                                                                        {tr(locale, "Affected motif links", "Affected motif links")}
+                                                                    </div>
+                                                                    {structurePreview.edges.map((edge) => (
+                                                                        <div
+                                                                            key={`${req.request_id}_edge_${edge.id}`}
+                                                                            className="TransferSuggestions__diffItem"
+                                                                        >
+                                                                            <strong>{motifLinkTypeLabel(locale, edge.type)}</strong>
+                                                                            <span>
+                                                                                {edge.fromTitle}
+                                                                                {" -> "}
+                                                                                {edge.toTitle}
+                                                                            </span>
+                                                                            {edge.note ? (
+                                                                                <span className="TransferSuggestions__meta">{edge.note}</span>
+                                                                            ) : null}
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            ) : null}
+                                                        </div>
+                                                    ) : null}
                                                     <div className="TransferSuggestions__actions">
                                                         <button
                                                             type="button"

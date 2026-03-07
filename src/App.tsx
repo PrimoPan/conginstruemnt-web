@@ -1976,6 +1976,7 @@ export default function App() {
                   locale={locale}
                   concepts={conceptsView}
                   motifs={motifs}
+                  motifLinks={motifLinks}
                   motifTransferState={motifTransferState}
                   transferRecommendationsEnabled={transferRecommendationsEnabled}
                   transferReviewStage={transferReviewStage}
