@@ -131,6 +131,7 @@ function makeFreshTaskPayload() {
     ...makeConversationPayload("active"),
     conversationId: CONVERSATION_ID_TASK2,
     title: "旅行规划·巴黎",
+    transferRecommendationsEnabled: true,
     graph: {
       id: CONVERSATION_ID_TASK2,
       version: 1,
@@ -725,14 +726,18 @@ test("New Trip should stay clean before first turn and show recommendations afte
   await page.getByRole("button", { name: /创建并开始|Create & Start/i }).click();
   await page.getByRole("button", { name: /Motif \(/i }).click();
 
-  await expect(page.getByText(/首轮 assistant 回复完成后，这里会静默展示 2-4 条历史规则建议/i)).toBeVisible();
-  await expect(page.getByRole("button", { name: /直接采用|Adopt/i })).toHaveCount(0);
+  await expect(
+    page.getByText(/首轮 assistant 回复完成后，这里会静默展示 2-4 条历史规则建议|当前还没有可用 motif/i)
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: /先加入待确认|Queue for confirmation/i })).toHaveCount(0);
 
-  await page.getByPlaceholder(/输入一句话|Type a message/i).fill("帮我规划巴黎七天旅行");
+  await page
+    .getByPlaceholder(/输入一句话|Type a message/i)
+    .fill("帮我规划一趟巴黎七天旅行，同行有爸妈，节奏不要太赶，酒店最好靠近地铁，白天多一些城市散步和博物馆，晚上保留一点轻松用餐时间。");
   await page.getByRole("button", { name: /发送|Send/i }).click();
 
   await expect.poll(() => streamCalls).toBe(1);
-  await expect(page.getByRole("button", { name: /直接采用|Adopt/i })).toHaveCount(1);
+  await expect(page.getByRole("button", { name: /先加入待确认|Queue for confirmation/i })).toHaveCount(1);
 });
 
 test("Closed task prompt should offer resume and new-task actions", async ({ page }) => {
