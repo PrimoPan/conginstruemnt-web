@@ -72,7 +72,10 @@ export function TopBar(props: {
                     className="Btn"
                     onClick={props.onNewTravelPlanning}
                     disabled={!props.loggedIn || props.busy}
-                    title={tr("从上次经验新建旅行规划", "Start a new trip planning from reusable constraints")}
+                    title={tr(
+                        "开始一个新的旅游任务；首轮回复后再决定是否沿用上次思路",
+                        "Start a new trip; decide what to carry over only after the first reply"
+                    )}
                 >
                     {tr("新增旅游规划", "New Trip Plan")}
                 </button>

@@ -285,7 +285,7 @@ export function ChatPanel(props: {
                 {modeCReferences.length ? (
                     <div className="ChatComposer__references">
                         <div className="ChatComposer__referencesTitle">
-                            {tr("Mode C 手动参考", "Mode C Manual References")}
+                            {tr("本次参考中的历史思路", "Past patterns in reference for this trip")}
                         </div>
                         <div className="ChatComposer__referencesList">
                             {modeCReferences.slice(0, 5).map((ref) => (
@@ -295,7 +295,7 @@ export function ChatPanel(props: {
                                         type="button"
                                         className="ChatComposer__referenceChipRemove"
                                         onClick={() => props.onRemoveModeCReference?.(ref.id)}
-                                        title={tr("移除参考", "Remove reference")}
+                                        title={tr("移除这条参考", "Remove this reference")}
                                     >
                                         x
                                     </button>
@@ -307,7 +307,7 @@ export function ChatPanel(props: {
                 {injectedMotifs.length ? (
                     <div className="ChatComposer__injections">
                         <div className="ChatComposer__injectionsTitle">
-                            {tr("已注入规则", "Injected Rules")}
+                            {tr("当前沿用中的历史思路", "Past patterns currently in use")}
                         </div>
                         <div className="ChatComposer__injectionsList">
                             {injectedMotifs.slice(0, 4).map((inj) => (
@@ -318,7 +318,7 @@ export function ChatPanel(props: {
                                     onClick={() => props.onMotifNotApplicable?.(inj.candidate_id, inj.motif_type_id)}
                                     title={inj.constraint_text}
                                 >
-                                    {tr("这条不适用", "Rule not applicable")}
+                                    {tr("这条这次不适用", "This does not fit this trip")}
                                 </button>
                             ))}
                         </div>

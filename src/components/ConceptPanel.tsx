@@ -105,6 +105,20 @@ function causalOperatorLabel(locale: AppLocale, op?: ConceptMotif["causalOperato
     return tr(locale, "未指定", "Unspecified");
 }
 
+function transferModeHint(locale: AppLocale, mode?: "A" | "B" | "C") {
+    if (mode === "A") return tr(locale, "建议直接沿用", "Suggested: keep it");
+    if (mode === "B") return tr(locale, "建议先改一下", "Suggested: revise first");
+    return tr(locale, "建议谨慎沿用", "Suggested: use carefully");
+}
+
+function transferDecisionStatusLabel(locale: AppLocale, status: string) {
+    if (status === "adopted") return tr(locale, "已沿用", "In use");
+    if (status === "modified_pending_confirmation") return tr(locale, "待你确认", "Awaiting confirmation");
+    if (status === "ignored") return tr(locale, "这次不用", "Skipped this trip");
+    if (status === "revised") return tr(locale, "已更新", "Updated");
+    return tr(locale, "待处理", "Pending");
+}
+
 type TabKey = "concept" | "motif";
 type MotifLibraryEntry = CognitiveState["motif_library"][number];
 type MotifEditDraft = {
@@ -357,9 +371,15 @@ export function ConceptPanel(props: {
                     };
                 })
                 .filter((entry) => entry.motifTypeId && entry.motifTypeTitle && entry.reusableDescription)
+                .filter(
+                    (entry) =>
+                        !transferRecommendations.some(
+                            (rec) => cleanText(rec.motif_type_id, 180) === cleanText(entry.motifTypeId, 180)
+                        )
+                )
                 .sort((a, b) => b.matchScore - a.matchScore || a.motifTypeTitle.localeCompare(b.motifTypeTitle))
                 .slice(0, 8),
-        [motifLibrary]
+        [motifLibrary, transferRecommendations]
     );
 
     const conceptSelectOptions = useMemo(
@@ -538,28 +558,23 @@ export function ConceptPanel(props: {
                 tab === "motif" &&
                 !transferRecommendations.length &&
                 transferReviewStage &&
-                transferReviewStage !== "ready" ? (
+                transferReviewStage !== "ready" &&
+                transferReviewStage !== "fresh_task" ? (
                     <div className="TransferSuggestions">
                         <div className="TransferSuggestions__title">
-                            {tr(locale, "来自上次任务的建议", "Suggested from previous tasks")}
+                            {tr(locale, "这次可能可以沿用的思路", "Ideas you may want to carry into this trip")}
                         </div>
                         <div className="ConceptPanel__empty">
-                            {transferReviewStage === "fresh_task"
+                            {transferReviewStage === "awaiting_first_turn_review"
                                 ? tr(
                                     locale,
-                                    "新任务已创建。首轮 assistant 回复完成后，这里会静默展示 2-4 条历史规则建议。",
-                                    "This task is newly created. After the first assistant reply, 2-4 historical motif suggestions will appear here silently."
-                                )
-                                : transferReviewStage === "awaiting_first_turn_review"
-                                ? tr(
-                                    locale,
-                                    "正在根据首轮对话评估可迁移规则，请稍候。",
-                                    "Evaluating transferable motifs from the first turn. Please wait."
+                                    "正在根据这次的首轮需求检索历史思路，请稍候。",
+                                    "Looking through your past trip patterns based on this first turn. Please wait."
                                 )
                                 : tr(
                                     locale,
-                                    "首轮评审已完成，但没有足够匹配的历史规则需要推荐。",
-                                    "First-turn review is complete. No strong historical motif matches were found."
+                                    "这次没有找到适合直接沿用的旧思路。需要的话，你也可以在下方历史思路库里自己挑。",
+                                    "No strong past trip pattern is ready to reuse directly. If needed, you can still pick one manually from the library below."
                                 )}
                         </div>
                     </div>
@@ -568,7 +583,7 @@ export function ConceptPanel(props: {
                 {transferRecommendationsEnabled && tab === "motif" && transferRecommendations.length ? (
                     <div className="TransferSuggestions">
                         <div className="TransferSuggestions__title">
-                            {tr(locale, "来自上次任务的建议", "Suggested from previous tasks")}
+                            {tr(locale, "这次可能可以沿用的思路", "Ideas you may want to carry into this trip")}
                         </div>
                         {pendingRecommendations.slice(0, 4).map((rec) => {
                             const score = Math.round(Math.max(0, Math.min(1, Number(rec.match_score || 0))) * 100);
@@ -577,13 +592,15 @@ export function ConceptPanel(props: {
                             return (
                                 <div key={rec.candidate_id} className="TransferSuggestions__item">
                                     <div className="TransferSuggestions__head">
-                                        <span className="TransferSuggestions__badge">📚 {tr(locale, "已有", "Library")}</span>
+                                        <span className="TransferSuggestions__badge">📚 {tr(locale, "历史", "Past")}</span>
                                         <span className="TransferSuggestions__name">{rec.motif_type_title}</span>
-                                        <span className="TransferSuggestions__meta">{score}% · {rec.recommended_mode}</span>
+                                        <span className="TransferSuggestions__meta">
+                                            {score}% · {transferModeHint(locale, rec.recommended_mode)}
+                                        </span>
                                     </div>
                                     <div className="TransferSuggestions__desc">{rec.reusable_description || rec.reason}</div>
                                     {isInjected ? (
-                                        <div className="TransferSuggestions__status">{tr(locale, "已注入", "Injected")}</div>
+                                        <div className="TransferSuggestions__status">{tr(locale, "已沿用到当前任务", "Already in use")}</div>
                                     ) : null}
                                     {!isEditing ? (
                                         <div className="TransferSuggestions__actions">
@@ -597,7 +614,7 @@ export function ConceptPanel(props: {
                                                     })
                                                 }
                                             >
-                                                {tr(locale, "直接采用", "Adopt")}
+                                                {tr(locale, "直接沿用", "Keep it")}
                                             </button>
                                             <button
                                                 type="button"
@@ -607,7 +624,7 @@ export function ConceptPanel(props: {
                                                     setEditingCandidateText(rec.reusable_description || rec.motif_type_title);
                                                 }}
                                             >
-                                                {tr(locale, "修改后采用", "Modify + Adopt")}
+                                                {tr(locale, "先改一下", "Revise first")}
                                             </button>
                                             <button
                                                 type="button"
@@ -619,7 +636,7 @@ export function ConceptPanel(props: {
                                                     })
                                                 }
                                             >
-                                                {tr(locale, "不适用", "Ignore")}
+                                                {tr(locale, "这次不用", "Skip this trip")}
                                             </button>
                                         </div>
                                     ) : (
@@ -628,6 +645,11 @@ export function ConceptPanel(props: {
                                                 className="FlowInspector__editor"
                                                 value={editingCandidateText}
                                                 onChange={(e) => setEditingCandidateText(e.target.value)}
+                                                placeholder={tr(
+                                                    locale,
+                                                    "把这条旧思路改成更适合这次的说法",
+                                                    "Rewrite this past pattern so it fits this trip"
+                                                )}
                                             />
                                             <div className="TransferSuggestions__actions">
                                                 <button
@@ -653,7 +675,7 @@ export function ConceptPanel(props: {
                                                         setEditingCandidateText("");
                                                     }}
                                                 >
-                                                    {tr(locale, "保存并采用", "Save + Adopt")}
+                                                    {tr(locale, "按修改后的版本沿用", "Use revised version")}
                                                 </button>
                                             </div>
                                         </div>
@@ -663,12 +685,12 @@ export function ConceptPanel(props: {
                         })}
                         {handledRecommendations.length ? (
                             <details className="TransferSuggestions__handled">
-                                <summary>{tr(locale, "已处理建议", "Handled suggestions")}</summary>
+                                <summary>{tr(locale, "已处理的历史思路", "Handled past patterns")}</summary>
                                 <div className="TransferSuggestions__handledList">
                                     {handledRecommendations.map((rec) => (
                                         <div key={`${rec.candidate_id}_handled`} className="TransferSuggestions__handledItem">
                                             <span>{rec.motif_type_title}</span>
-                                            <span>{rec.decision_status}</span>
+                                            <span>{transferDecisionStatusLabel(locale, rec.decision_status)}</span>
                                             {rec.decision_status !== "ignored" ? (
                                                 <button
                                                     type="button"
@@ -681,7 +703,7 @@ export function ConceptPanel(props: {
                                                         })
                                                     }
                                                 >
-                                                    {tr(locale, "这条不适用", "Not applicable")}
+                                                    {tr(locale, "这条现在不适合", "This no longer fits")}
                                                 </button>
                                             ) : null}
                                         </div>
@@ -692,7 +714,7 @@ export function ConceptPanel(props: {
                         {pendingRevisionRequests.length ? (
                             <div className="TransferSuggestions__revision">
                                 <div className="TransferSuggestions__title">
-                                    {tr(locale, "信念修订协商", "Belief Revision Negotiation")}
+                                    {tr(locale, "这条旧思路可能需要更新", "This past pattern may need updating")}
                                 </div>
                                 {pendingRevisionRequests.map((req) => (
                                     <div key={req.request_id} className="TransferSuggestions__revisionItem">
@@ -709,7 +731,7 @@ export function ConceptPanel(props: {
                                                     })
                                                 }
                                             >
-                                                {tr(locale, "覆盖原规则", "Overwrite")}
+                                                {tr(locale, "直接更新旧思路", "Update old pattern")}
                                             </button>
                                             <button
                                                 type="button"
@@ -722,7 +744,7 @@ export function ConceptPanel(props: {
                                                     })
                                                 }
                                             >
-                                                {tr(locale, "新建版本", "New Version")}
+                                                {tr(locale, "另存为新思路", "Save as new pattern")}
                                             </button>
                                         </div>
                                     </div>
@@ -732,16 +754,21 @@ export function ConceptPanel(props: {
                     </div>
                 ) : null}
 
-                {transferRecommendationsEnabled && tab === "motif" && modeCLibraryEntries.length ? (
-                    <div className="ModeCPanel">
-                        <div className="ModeCPanel__title">
-                            {tr(locale, "Mode C · 手动参考库", "Mode C · Manual Reference Library")}
-                        </div>
+                {transferRecommendationsEnabled &&
+                tab === "motif" &&
+                transferReviewStage &&
+                transferReviewStage !== "fresh_task" &&
+                transferReviewStage !== "awaiting_first_turn_review" &&
+                modeCLibraryEntries.length ? (
+                    <details className="ModeCPanel">
+                        <summary className="ModeCPanel__title">
+                            {tr(locale, "历史思路库", "Past Trip Pattern Library")}
+                        </summary>
                         <div className="ModeCPanel__hint">
                             {tr(
                                 locale,
-                                "用户主导选择：作为参考（不自动注入）或作为约束（注入为 C 模式）。",
-                                "User-driven selection: use as reference (no auto-injection) or as constraint (inject in mode C)."
+                                "如果上面的建议都不合适，你也可以自己从过去的任务里挑一条带到这次规划里。",
+                                "If the suggestions above do not fit, you can still bring in a past pattern manually."
                             )}
                         </div>
                         <div className="ModeCPanel__list">
@@ -750,9 +777,9 @@ export function ConceptPanel(props: {
                                 return (
                                     <div key={`modec_${entry.motifTypeId}`} className="ModeCPanel__item">
                                         <div className="ModeCPanel__head">
-                                            <span className="ModeCPanel__badge">📚 {tr(locale, "已有", "Library")}</span>
+                                            <span className="ModeCPanel__badge">📚 {tr(locale, "历史", "Past")}</span>
                                             <span className="ModeCPanel__name">{entry.motifTypeTitle}</span>
-                                            <span className="ModeCPanel__meta">{scorePct}% · Mode C</span>
+                                            <span className="ModeCPanel__meta">{scorePct}%</span>
                                         </div>
                                         <div className="ModeCPanel__desc">{entry.reusableDescription}</div>
                                         <div className="ModeCPanel__actions">
@@ -772,7 +799,7 @@ export function ConceptPanel(props: {
                                                     })
                                                 }
                                             >
-                                                {tr(locale, "作为参考", "Use as Reference")}
+                                                {tr(locale, "先放进本次参考", "Add as reference")}
                                             </button>
                                             <button
                                                 type="button"
@@ -790,14 +817,14 @@ export function ConceptPanel(props: {
                                                     })
                                                 }
                                             >
-                                                {tr(locale, "作为约束", "Use as Constraint")}
+                                                {tr(locale, "按这条继续规划", "Plan with this")}
                                             </button>
                                         </div>
                                     </div>
                                 );
                             })}
                         </div>
-                    </div>
+                    </details>
                 ) : null}
 
                 {tab === "motif"

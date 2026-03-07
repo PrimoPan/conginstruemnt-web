@@ -302,3 +302,17 @@ test("plain new conversations keep transfer recommendations disabled even if mot
   expect(screen.getByTestId("transfer-enabled")).toHaveTextContent("false");
   expect(screen.getByTestId("transfer-stage")).toHaveTextContent("");
 });
+
+test("new trip modal explains section-5 inheritance flow in user language", async () => {
+  localStorage.setItem("ci_token", "token-1");
+
+  render(<App />);
+
+  fireEvent.click(screen.getByRole("button", { name: "新增旅游规划" }));
+
+  expect(await screen.findByText("先告诉系统这次想去哪里。等首轮 assistant 回复完成后，右侧会静默出现 2-4 条“上次可能还能沿用的思路”，由你决定是否继续沿用。")).toBeInTheDocument();
+  expect(
+    screen.getByText("如果你已经知道这次有几条底线必须和上次一样，可以先写在这里（可选）")
+  ).toBeInTheDocument();
+  expect(screen.getByText("继续保留长期稳定的个人情况（身体/饮食/语言/安全等）")).toBeInTheDocument();
+});

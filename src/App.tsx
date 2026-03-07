@@ -1735,8 +1735,14 @@ export default function App() {
               <div className="TripBootstrapModal__title">
                 {tr("新增旅游规划", "Create New Trip Plan")}
               </div>
+              <div className="TripBootstrapModal__hint">
+                {tr(
+                  "先告诉系统这次想去哪里。等首轮 assistant 回复完成后，右侧会静默出现 2-4 条“上次可能还能沿用的思路”，由你决定是否继续沿用。",
+                  "Start by saying where you want to go this time. After the first assistant reply, the right panel will quietly show 2-4 past trip patterns that may still fit, and you decide whether to reuse them."
+                )}
+              </div>
               <label className="TripBootstrapModal__label">
-                {tr("你想去哪里玩？", "Where do you want to travel next?")}
+                {tr("这次想去哪里？", "Where do you want to go this time?")}
               </label>
               <input
                 className="Input TripBootstrapModal__input"
@@ -1745,13 +1751,19 @@ export default function App() {
                 placeholder={tr("例如：京都", "e.g. Kyoto")}
               />
               <label className="TripBootstrapModal__label">
-                {tr("与上次保持一致的信息（可选）", "What should stay consistent from the last trip? (optional)")}
+                {tr(
+                  "如果你已经知道这次有几条底线必须和上次一样，可以先写在这里（可选）",
+                  "If you already know a few things that must stay the same from last time, write them here (optional)"
+                )}
               </label>
               <textarea
                 className="TripBootstrapModal__textarea"
                 value={newTripKeepConsistentText}
                 onChange={(e) => setNewTripKeepConsistentText(e.target.value)}
-                placeholder={tr("例如：预算上限、住宿安全、旅行节奏", "e.g. budget cap, safe lodging, low-intensity pace")}
+                placeholder={tr(
+                  "例如：预算别超过2万、还是想轻松一点、继续优先安全住宿",
+                  "e.g. keep budget under 20k, still want a lighter pace, keep safe lodging first"
+                )}
               />
               <label className="TripBootstrapModal__check">
                 <input
@@ -1761,11 +1773,17 @@ export default function App() {
                 />
                 <span>
                   {tr(
-                    "自动保留稳定画像（身体/信仰/语言/行动能力/饮食/安全等）",
-                    "Auto-carry stable profile (health/religion/language/mobility/diet/safety, etc.)"
+                    "继续保留长期稳定的个人情况（身体/饮食/语言/安全等）",
+                    "Keep long-term personal needs (health/diet/language/safety, etc.)"
                   )}
                 </span>
               </label>
+              <div className="TripBootstrapModal__hint">
+                {tr(
+                  "这里不会自动套用旧行程，只会继续保留长期有效的个人限制。",
+                  "This will not auto-apply the old itinerary. It only keeps long-term personal constraints."
+                )}
+              </div>
               {newTripCarryStableProfile && autoCarryHints.length ? (
                 <div className="TripBootstrapModal__hint">
                   {tr("将自动带入：", "Auto-carry: ")}
