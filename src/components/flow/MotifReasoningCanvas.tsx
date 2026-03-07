@@ -22,6 +22,7 @@ import type {
     MotifReasoningNode,
     MotifReasoningView,
 } from "../../core/type";
+import { relationLabel } from "../../core/relationLabels";
 
 type MotifFlowData = {
     motifId: string;
@@ -288,12 +289,11 @@ function structuredStepExplanation(params: {
             ? tr(locale, `依赖 ${depCount} 个前置 motif`, `depends on ${depCount} prior motif(s)`)
             : tr(locale, "无前置依赖", "no prior dependency");
     const relation = dependencyLabel(step.dependencyClass || node?.relation, locale);
-    const operator = causalOperatorLabel(step.causalOperator || node?.causalOperator, locale);
     const role = stepRoleLabel(step.role, locale);
     return tr(
         locale,
-        `第${step.order}步 · ${role} · ${relation} / ${operator}；${depText}。`,
-        `Step ${step.order} · ${role} · ${relation} / ${operator}; ${depText}.`
+        `第${step.order}步 · ${role} · ${relation}；${depText}。`,
+        `Step ${step.order} · ${role} · ${relation}; ${depText}.`
     );
 }
 
@@ -339,19 +339,7 @@ function statusIcon(status: ConceptMotif["status"]) {
 }
 
 function dependencyLabel(relation: ConceptMotif["relation"] | undefined, locale?: AppLocale) {
-    if (relation === "enable") return tr(locale, "Enable（直接/中介因果）", "Enable (Direct/Mediated)");
-    if (relation === "constraint") return tr(locale, "Constraint（混杂）", "Constraint (Confounding)");
-    if (relation === "determine") return tr(locale, "Determine（干预）", "Determine (Intervention)");
-    return tr(locale, "Conflict（矛盾）", "Conflict (Contradiction)");
-}
-
-function causalOperatorLabel(op: ConceptMotif["causalOperator"] | undefined, locale?: AppLocale) {
-    if (op === "direct_causation") return tr(locale, "直接因果", "Direct causation");
-    if (op === "mediated_causation") return tr(locale, "中介因果", "Mediated causation");
-    if (op === "confounding") return tr(locale, "混杂", "Confounding");
-    if (op === "intervention") return tr(locale, "干预（do-operator）", "Intervention (do-operator)");
-    if (op === "contradiction") return tr(locale, "矛盾", "Contradiction");
-    return tr(locale, "未指定", "Unspecified");
+    return relationLabel((locale || "zh-CN") as AppLocale, relation);
 }
 
 function edgeTypeLabel(type: MotifLink["type"], locale?: AppLocale) {
@@ -833,8 +821,7 @@ const MotifNode = memo(function MotifNode({ data, selected }: NodeProps<Node<Mot
             </div>
 
             <div className="MotifReasoningNode__meta">
-                {statusLabel(data.status, locale)} · {dependencyLabel(data.dependencyClass || data.relation, locale)} ·{" "}
-                {causalOperatorLabel(data.causalOperator, locale)}
+                {statusLabel(data.status, locale)} · {dependencyLabel(data.dependencyClass || data.relation, locale)}
             </div>
             <div className="MotifReasoningNode__pattern">{data.causalFormula || data.pattern}</div>
 

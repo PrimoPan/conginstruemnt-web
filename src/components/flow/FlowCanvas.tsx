@@ -1,6 +1,7 @@
 import React from "react";
 import {
     Background,
+    Connection,
     Controls,
     Edge,
     MiniMap,
@@ -39,6 +40,7 @@ export function FlowCanvas(props: {
     onNodeDragStop: (e: any, node: Node<FlowNodeData>) => void;
     onSelectionDragStart: (e: any, nodes: Node<FlowNodeData>[]) => void;
     onSelectionDragStop: (e: any, nodes: Node<FlowNodeData>[]) => void;
+    onConnect: (connection: Connection) => void;
     onNodeClick: (nodeId: string) => void;
     onNodeHover: (focus: NodeEvidenceFocus | null) => void;
     onEdgeClick: (edgeId: string) => void;
@@ -56,6 +58,7 @@ export function FlowCanvas(props: {
             onNodeDragStop={props.onNodeDragStop}
             onSelectionDragStart={props.onSelectionDragStart}
             onSelectionDragStop={props.onSelectionDragStop}
+            onConnect={props.onConnect}
             onNodeClick={(_, node) => props.onNodeClick(node.id)}
             onNodeMouseEnter={(_, node) => {
                 const terms = (node.data?.evidenceIds || [])
@@ -74,7 +77,7 @@ export function FlowCanvas(props: {
             nodeTypes={props.nodeTypes}
             fitView
             fitViewOptions={{ padding: 0.28, duration: 260 }}
-            nodesConnectable={false}
+            nodesConnectable
             nodesDraggable
             elementsSelectable
             panOnDrag

@@ -24,10 +24,9 @@ import {
     makeCanonicalFreeformSemanticKey,
 } from "../core/conceptSemantic";
 import {
-    EDITABLE_PARENT_EDGE_TYPES,
+    dedupeDirectedEdges,
     deleteNodeAndReconnect,
-    findDropParent,
-    hasPath,
+    findDirectedEdge,
     newEdgeId,
     newNodeId,
     normalize01,
@@ -399,6 +398,49 @@ export function FlowPanel(props: {
         [updateDraftGraph]
     );
 
+    const deleteEdge = useCallback(
+        (edgeId: string) => {
+            if (!edgeId) return;
+            updateDraftGraph((prev) => ({
+                ...prev,
+                edges: (prev.edges || []).filter((edge) => edge.id !== edgeId),
+            }));
+            setSelectedEdgeId("");
+            setSelectedNodeId("");
+        },
+        [updateDraftGraph]
+    );
+
+    const createEdge = useCallback(
+        (fromId: string, toId: string) => {
+            if (!fromId || !toId || fromId === toId) return;
+            const existing = findDirectedEdge(draftGraphRef.current.edges || [], fromId, toId);
+            if (existing) {
+                setSelectedEdgeId(existing.id);
+                setSelectedNodeId("");
+                return;
+            }
+
+            const edgeId = newEdgeId();
+            updateDraftGraph((prev) => ({
+                ...prev,
+                edges: dedupeDirectedEdges([
+                    ...(prev.edges || []),
+                    {
+                        id: edgeId,
+                        from: fromId,
+                        to: toId,
+                        type: "enable",
+                        confidence: 0.72,
+                    },
+                ]),
+            }));
+            setSelectedEdgeId(edgeId);
+            setSelectedNodeId("");
+        },
+        [updateDraftGraph]
+    );
+
     const deleteNode = useCallback(
         (nodeId: string) => {
             if (!nodeId) return;
@@ -606,27 +648,7 @@ export function FlowPanel(props: {
 
             const prev = draftGraphRef.current;
             const movedNodes = pickMovedNodes([dragged], start ? { [dragged.id]: start } : {}, 6);
-            let nextGraph = persistDraggedNodePositions(prev, movedNodes);
-            const droppedParentId = moveDist > 24 ? findDropParent(dragged, nodes) : null;
-
-            if (droppedParentId && droppedParentId !== dragged.id) {
-                const incomingRemoved = (nextGraph.edges || []).filter(
-                    (e) => !(e.to === dragged.id && EDITABLE_PARENT_EDGE_TYPES.includes(e.type))
-                );
-                const already = incomingRemoved.some((e) => e.from === droppedParentId && e.to === dragged.id);
-                if (!already) {
-                    if (!hasPath(dragged.id, droppedParentId, incomingRemoved)) {
-                        incomingRemoved.push({
-                            id: newEdgeId(),
-                            from: droppedParentId,
-                            to: dragged.id,
-                            type: "enable",
-                            confidence: 0.86,
-                        });
-                    }
-                }
-                nextGraph = { ...nextGraph, edges: incomingRemoved };
-            }
+            const nextGraph = persistDraggedNodePositions(prev, movedNodes);
 
             if (nextGraph === prev) return;
             draftGraphRef.current = nextGraph;
@@ -634,7 +656,7 @@ export function FlowPanel(props: {
             setDirty(true);
             setConversationDraft(conversationId, nextGraph, true);
         },
-        [conversationId, nodes, setConversationDraft]
+        [conversationId, setConversationDraft]
     );
 
     const hasUnsavedChanges = dirty || !!extraDirty;
@@ -714,6 +736,7 @@ export function FlowPanel(props: {
                             edge={selectedEdge}
                             onPatchNode={onNodePatch}
                             onPatchEdgeType={patchEdgeType}
+                            onDeleteEdge={deleteEdge}
                             onDeleteNode={deleteNode}
                         />
 
@@ -728,6 +751,9 @@ export function FlowPanel(props: {
                             onNodeDragStop={onNodeDragStop}
                             onSelectionDragStart={onSelectionDragStart}
                             onSelectionDragStop={onSelectionDragStop}
+                            onConnect={(connection) => {
+                                createEdge(String(connection.source || ""), String(connection.target || ""));
+                            }}
                             onNodeClick={(nodeId) => {
                                 setSelectedNodeId(nodeId);
                                 setSelectedEdgeId("");

@@ -118,6 +118,30 @@ function edgeSig(from: string, to: string, type: EdgeType) {
     return `${from}|${to}|${type}`;
 }
 
+function directedEdgeSig(from: string, to: string) {
+    return `${from}|${to}`;
+}
+
+export function findDirectedEdge(
+    edges: CDGEdge[],
+    from: string,
+    to: string
+): CDGEdge | null {
+    return edges.find((edge) => edge.from === from && edge.to === to) || null;
+}
+
+export function dedupeDirectedEdges(edges: CDGEdge[]): CDGEdge[] {
+    const seen = new Set<string>();
+    const next: CDGEdge[] = [];
+    for (const edge of edges) {
+        const sig = directedEdgeSig(edge.from, edge.to);
+        if (seen.has(sig)) continue;
+        seen.add(sig);
+        next.push(edge);
+    }
+    return next;
+}
+
 function clampEdgeConfidence(x: any, fallback = 0.72) {
     const n = Number(x);
     if (!Number.isFinite(n)) return fallback;

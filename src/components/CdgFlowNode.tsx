@@ -12,6 +12,7 @@ function shorten(input: string, max = 36) {
 
 export const CdgFlowNode = memo(function CdgFlowNode({ data, selected }: NodeProps<CdgNode>) {
     const en = data?.locale === "en-US";
+    const importanceLabel = en ? "Priority" : "优先级";
     const cls = useMemo(() => {
         const parts = ["CdgNode"];
         if (data?.nodeType) parts.push(`CdgNode--type-${data.nodeType}`);
@@ -20,7 +21,11 @@ export const CdgFlowNode = memo(function CdgFlowNode({ data, selected }: NodePro
     }, [data?.nodeType, selected]);
 
     const importancePct =
-        typeof data?.importance === "number" ? `${Math.round(data.importance * 100)}%` : en ? "N/A" : "未标注";
+        typeof data?.importance === "number"
+            ? `${importanceLabel} ${Math.round(data.importance * 100)}%`
+            : en
+                ? `${importanceLabel} N/A`
+                : `${importanceLabel} 未标注`;
 
     const wrapperStyle: React.CSSProperties = {
         background: data?.toneBg,

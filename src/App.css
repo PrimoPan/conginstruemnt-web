@@ -698,6 +698,66 @@ body {
   gap: 4px;
 }
 
+.FlowInspector__sliderHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.FlowInspector__help {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.FlowInspector__helpTrigger {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  border: 1px solid rgba(15, 23, 42, 0.18);
+  background: rgba(255, 255, 255, 0.96);
+  color: rgba(30, 41, 59, 0.74);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 0;
+  cursor: help;
+}
+
+.FlowInspector__helpTrigger:hover,
+.FlowInspector__helpTrigger:focus-visible {
+  border-color: rgba(37, 99, 235, 0.42);
+  color: rgba(29, 78, 216, 0.92);
+  outline: none;
+}
+
+.FlowInspector__tooltip {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  z-index: 20;
+  width: min(260px, 56vw);
+  padding: 9px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(15, 23, 42, 0.14);
+  background: rgba(15, 23, 42, 0.96);
+  color: rgba(248, 250, 252, 0.96);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.22);
+  font-size: 12px;
+  line-height: 1.45;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-4px);
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.FlowInspector__help:hover .FlowInspector__tooltip,
+.FlowInspector__help:focus-within .FlowInspector__tooltip {
+  opacity: 1;
+  transform: translateY(0);
+}
+
 .FlowInspector__sliderLabel input[type="range"] {
   width: 100%;
   accent-color: #2563eb;
@@ -1719,15 +1779,23 @@ body {
 
 .ConceptCard--motifLite {
   border-radius: 20px;
-  min-height: 132px;
-  gap: 8px;
+  min-height: 156px;
+  gap: 10px;
 }
 
 .ConceptCard--motifLite .ConceptCard__title {
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   white-space: normal;
+}
+
+.ConceptCard--motifLite .ConceptCard__kind {
+  margin-top: 6px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .ConceptCard--motifLite .ConceptCard__actions {
@@ -1777,6 +1845,34 @@ body {
   min-width: 0;
 }
 
+.MotifCard__detail {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+  font-size: 12px;
+  color: rgba(15, 23, 42, 0.8);
+}
+
+.MotifCard__detailLabel {
+  color: rgba(15, 23, 42, 0.56);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.MotifCard__detailText {
+  min-width: 0;
+  line-height: 1.4;
+}
+
+.MotifCard__relation {
+  font-size: 12px;
+  line-height: 1.45;
+  color: rgba(15, 23, 42, 0.86);
+  border-left: 2px solid rgba(59, 130, 246, 0.28);
+  padding-left: 8px;
+}
+
 .MotifCard__pattern {
   font-size: 12px;
   color: rgba(15, 23, 42, 0.78);
@@ -1790,6 +1886,15 @@ body {
   -webkit-box-orient: vertical;
   line-height: 1.35;
   min-height: 32px;
+}
+
+.MotifCard__progressHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  color: rgba(15, 23, 42, 0.6);
 }
 
 .MotifCard__concepts {

@@ -1,6 +1,7 @@
 import React from "react";
 import type { AppLocale, CDGEdge, CDGNode, EdgeType } from "../../core/type";
 import { normalize01 } from "./graphDraftUtils";
+import { relationLabel } from "../../core/relationLabels";
 
 export function FlowInspector(props: {
     locale: AppLocale;
@@ -8,11 +9,17 @@ export function FlowInspector(props: {
     edge: CDGEdge | null;
     onPatchNode: (nodeId: string, patch: Partial<CDGNode>) => void;
     onPatchEdgeType: (edgeId: string, edgeType: EdgeType) => void;
+    onDeleteEdge: (edgeId: string) => void;
     onDeleteNode: (nodeId: string) => void;
 }) {
-    const { node, edge, onPatchNode, onPatchEdgeType, onDeleteNode, locale } = props;
+    const { node, edge, onPatchNode, onPatchEdgeType, onDeleteEdge, onDeleteNode, locale } = props;
     const en = locale === "en-US";
     const tr = (zh: string, enText: string) => (en ? enText : zh);
+    const confidenceLabel = tr("系统觉得这条信息有多靠谱", "How reliable this feels to the system");
+    const confidenceHelpText = tr(
+        "你可以把它理解成：系统有多相信你刚刚这句话。往高了调，系统会更容易把它当真，直接照着安排；往低了调，系统会先记下来，但更可能再问你一句，确认是不是这个意思。已经想清楚、基本不会变的，就调高一点；只是随口提一下、自己也还没拿准的，就调低一点。",
+        "You can think of this as how much the system trusts what you said. Higher means it will act on it more directly. Lower means it will keep it in mind, but is more likely to ask a follow-up question before using it."
+    );
 
     if (!node && !edge) {
         return (
@@ -26,18 +33,28 @@ export function FlowInspector(props: {
     if (edge && !node) {
         return (
             <div className="FlowInspector">
-                <div className="FlowInspector__title">{tr("编辑边", "Edit Edge")}</div>
+                <div className="FlowInspector__head">
+                    <div className="FlowInspector__title">{tr("编辑关系", "Edit Relationship")}</div>
+                    <button
+                        type="button"
+                        className="Btn FlowToolbar__btn FlowToolbar__btnDanger"
+                        onClick={() => onDeleteEdge(edge.id)}
+                        title={tr("删除当前关系", "Delete current relationship")}
+                    >
+                        {tr("删除关系", "Delete Relationship")}
+                    </button>
+                </div>
                 <label className="FlowInspector__fieldLabel">
-                    {tr("边类型", "Edge Type")}
+                    {tr("关系类型", "Relationship Type")}
                     <select
                         className="FlowInspector__select"
                         value={edge.type}
                         onChange={(e) => onPatchEdgeType(edge.id, e.target.value as EdgeType)}
                     >
-                        <option value="enable">enable (direct / mediated)</option>
-                        <option value="constraint">constraint (confounding)</option>
-                        <option value="determine">determine (intervention)</option>
-                        <option value="conflicts_with">conflicts_with (contradiction)</option>
+                        <option value="enable">{relationLabel(locale, "enable")}</option>
+                        <option value="constraint">{relationLabel(locale, "constraint")}</option>
+                        <option value="determine">{relationLabel(locale, "determine")}</option>
+                        <option value="conflicts_with">{relationLabel(locale, "conflicts_with")}</option>
                     </select>
                 </label>
             </div>
@@ -87,22 +104,6 @@ export function FlowInspector(props: {
                         <option value="constraint">constraint</option>
                         <option value="preference">preference</option>
                         <option value="factual_assertion">factual_assertion</option>
-                    </select>
-                </label>
-                <label className="FlowInspector__fieldLabel">
-                    {tr("层级", "Layer")}
-                    <select
-                        className="FlowInspector__select"
-                        value={current.layer || ""}
-                        onChange={(e) =>
-                            onPatchNode(current.id, { layer: (e.target.value || undefined) as any })
-                        }
-                    >
-                        <option value="">(none)</option>
-                        <option value="intent">intent</option>
-                        <option value="requirement">requirement</option>
-                        <option value="preference">preference</option>
-                        <option value="risk">risk</option>
                     </select>
                 </label>
             </div>
@@ -177,7 +178,21 @@ export function FlowInspector(props: {
             </label>
 
             <label className="FlowInspector__sliderLabel">
-                {tr("置信度", "Confidence")}: {Math.round(normalize01(confidenceValue, 0.68) * 100)}%
+                <span className="FlowInspector__sliderHead">
+                    <span>{confidenceLabel}: {Math.round(normalize01(confidenceValue, 0.68) * 100)}%</span>
+                    <span className="FlowInspector__help">
+                        <button
+                            type="button"
+                            className="FlowInspector__helpTrigger"
+                            aria-label={tr("查看“系统觉得这条信息有多靠谱”的说明", 'Show help for "How reliable this feels to the system"')}
+                        >
+                            ?
+                        </button>
+                        <span className="FlowInspector__tooltip" role="tooltip">
+                            {confidenceHelpText}
+                        </span>
+                    </span>
+                </span>
                 <input
                     type="range"
                     min={0.2}
