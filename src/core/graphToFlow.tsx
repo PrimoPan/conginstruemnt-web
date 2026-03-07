@@ -1,6 +1,7 @@
 import type { Edge, Node } from "@xyflow/react";
 import { MarkerType } from "@xyflow/react";
-import type { AppLocale, CDG, CDGEdge, CDGNode, FlowNodeData, NodeLayer, Severity } from "./type";
+import type { AppLocale, CDG, CDGEdge, CDGNode, FlowNodeData, Severity } from "./type";
+import { relationLabel } from "./relationLabels";
 
 function typeLabel(type: string, locale: AppLocale): string {
     const en = locale === "en-US";
@@ -23,15 +24,6 @@ const TYPE_ORDER: Record<string, number> = {
     fact: 5,
     question: 6,
 };
-
-function layerLabel(layer: NodeLayer, locale: AppLocale): string {
-    const en = locale === "en-US";
-    if (layer === "intent") return en ? "Intent" : "意图层";
-    if (layer === "requirement") return en ? "Requirement" : "需求层";
-    if (layer === "preference") return en ? "Preference" : "偏好层";
-    if (layer === "risk") return en ? "Risk" : "风险层";
-    return layer;
-}
 
 function slotFamily(slot: string | null): string {
     if (!slot) return "none";
@@ -114,10 +106,8 @@ function clamp01(x: any, fallback = 0.68) {
 
 function nodeMeta(node: CDGNode, locale: AppLocale) {
     const parts = [typeLabel(node.type, locale)];
-    if (node.layer) parts.push(layerLabel(node.layer, locale));
     if (node.strength) parts.push(node.strength);
-    if (typeof node.confidence === "number") parts.push(`c=${node.confidence.toFixed(2)}`);
-    if (typeof node.importance === "number") parts.push(`i=${node.importance.toFixed(2)}`);
+    if (node.severity) parts.push(node.severity);
     return parts.join(" · ");
 }
 
@@ -178,12 +168,7 @@ function edgeColor(type: string, importance: number) {
 }
 
 function edgeSemanticLabel(type: string, locale: AppLocale): string {
-    const en = locale === "en-US";
-    if (type === "enable") return en ? "enable · direct/mediated" : "使能 · 直接/中介因果";
-    if (type === "constraint") return en ? "constraint · confounding" : "约束 · 混杂";
-    if (type === "determine") return en ? "determine · intervention" : "决定 · 干预";
-    if (type === "conflicts_with") return en ? "conflict · contradiction" : "冲突 · 矛盾";
-    return type;
+    return relationLabel(locale, type);
 }
 
 function pickRootGoalId(graph: CDG): string | null {

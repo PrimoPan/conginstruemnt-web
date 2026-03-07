@@ -35,7 +35,7 @@ function toStartData(payload: any): TurnStreamStartData {
  *
  * baseUrl:
  * - 如果你 CRA 配了 proxy，传 ""（推荐）
- * - 如果你直连腾讯云，传 "http://43.138.212.17:3001"
+ * - 如果你直连远端后端，传 "https://api.example.com"
  */
 export async function postTurnStream(params: {
     baseUrl: string;

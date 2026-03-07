@@ -53,7 +53,7 @@ function parseOneBlock(block: string): SseEvent | null {
  * POST + SSE 读取器：把事件回调给你
  */
 export async function postTurnStream(params: {
-    baseUrl: string;            // 例如 http://43.138.212.17:3001
+    baseUrl: string;            // 例如 https://api.example.com
     token: string;              // sessionToken
     conversationId: string;
     userText: string;

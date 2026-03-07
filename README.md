@@ -68,7 +68,7 @@ npm run build
 本地示例：
 
 ```bash
-REACT_APP_API_BASE_URLS=http://127.0.0.1:3001,http://43.138.212.17:3001
+REACT_APP_API_BASE_URLS=http://127.0.0.1:3001,https://api.example.com
 ```
 
 ---

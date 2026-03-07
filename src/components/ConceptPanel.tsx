@@ -10,6 +10,7 @@ import type {
     MotifLifecycleStatus,
     MotifTransferState,
 } from "../core/type";
+import { causalOperatorFriendlyLabel, relationLabel } from "../core/relationLabels";
 
 function clamp01(v: any, fallback = 0.7) {
     const n = Number(v);
@@ -64,14 +65,6 @@ function motifStatusIcon(status: ConceptMotif["status"]) {
     return "•";
 }
 
-function sourceRefToken(source: string) {
-    const s = cleanText(source, 64);
-    if (!s || s === "latest_user" || s === "latest_assistant") return "";
-    const m = s.match(/(\d{1,4})/);
-    if (m?.[1]) return `#${m[1]}`;
-    return s.slice(0, 18);
-}
-
 function motifPattern(
     motif: ConceptMotif,
     conceptNoById: Map<string, number>
@@ -89,20 +82,123 @@ function motifPattern(
     return `${sources.map(ref).join(" + ")} -> ${ref(target)}`;
 }
 
+function conceptDisplayTitle(id: string, conceptById: Map<string, ConceptItem>) {
+    const raw = cleanText(conceptById.get(id)?.title, 64) || cleanText(id, 64);
+    return raw.replace(/^[^:：]{1,12}[:：]\s*/, "").trim() || raw;
+}
+
+function motifConceptRefs(
+    motif: ConceptMotif,
+    conceptNoById: Map<string, number>,
+    conceptById: Map<string, ConceptItem>
+) {
+    const ids = uniq((motif.conceptIds || []).map((id) => cleanText(id, 100)).filter(Boolean), 8);
+    const anchorId =
+        cleanText(motif.anchorConceptId, 100) ||
+        cleanText(motif.roles?.target, 100) ||
+        ids[ids.length - 1] ||
+        "";
+    const sourceIds = uniq(
+        ((motif.roles?.sources || []).length ? motif.roles.sources : ids.filter((id) => id !== anchorId))
+            .map((id) => cleanText(id, 100))
+            .filter((id) => id && id !== anchorId),
+        7
+    );
+    const toRef = (id: string) => {
+        const no = conceptNoById.get(id);
+        const code = no ? `C${no}` : cleanText(id, 16);
+        const title = conceptDisplayTitle(id, conceptById);
+        return {
+            id,
+            code,
+            title,
+            codedTitle: `${code} ${title}`,
+        };
+    };
+    return {
+        sources: sourceIds.map(toRef),
+        target: anchorId ? toRef(anchorId) : null,
+    };
+}
+
+function motifHeadline(
+    locale: AppLocale,
+    motif: ConceptMotif,
+    conceptNoById: Map<string, number>,
+    conceptById: Map<string, ConceptItem>
+) {
+    const { sources, target } = motifConceptRefs(motif, conceptNoById, conceptById);
+    if (!sources.length || !target) return cleanText(motif.title, 160) || tr(locale, "未命名思路", "Untitled motif");
+    const sourceText = sources.map((x) => x.title).join(locale === "en-US" ? " + " : "、");
+    const relation = motif.dependencyClass || motif.relation;
+    if (relation === "constraint") return tr(locale, `${sourceText}会限制${target.title}`, `${sourceText} constrains ${target.title}`);
+    if (relation === "determine") return tr(locale, `${sourceText}会直接决定${target.title}`, `${sourceText} directly determines ${target.title}`);
+    if (relation === "conflicts_with") {
+        if (sources.length === 1) return tr(locale, `${sourceText}和${target.title}互相冲突`, `${sourceText} conflicts with ${target.title}`);
+        return tr(locale, `${sourceText}会和${target.title}产生冲突`, `${sourceText} conflicts with ${target.title}`);
+    }
+    return tr(locale, `${sourceText}会推动${target.title}`, `${sourceText} leads to ${target.title}`);
+}
+
+function motifNamedPattern(
+    motif: ConceptMotif,
+    conceptNoById: Map<string, number>,
+    conceptById: Map<string, ConceptItem>
+) {
+    const { sources, target } = motifConceptRefs(motif, conceptNoById, conceptById);
+    if (!sources.length || !target) return motifPattern(motif, conceptNoById);
+    return `${sources.map((x) => x.codedTitle).join(" + ")} -> ${target.codedTitle}`;
+}
+
+function motifModeText(locale: AppLocale, motif: ConceptMotif) {
+    const normalizeModeText = (raw: string) => {
+        const text = cleanText(raw, 180);
+        if (!text) return "";
+        if (/^coverage repair:/i.test(text)) {
+            const rest = cleanText(text.replace(/^coverage repair:\s*/i, ""), 160);
+            return tr(locale, `补全关系：${rest}`, `Patched relationship: ${rest}`);
+        }
+        if (locale !== "en-US") {
+            const simple = text.match(/^(.+?)\s+(支持|限制|决定)\s+目标$/);
+            if (simple) {
+                if (simple[2] === "限制") return `${simple[1]}优先过滤`;
+                if (simple[2] === "决定") return `${simple[1]}直接锁定`;
+                if (simple[2] === "支持") return `${simple[1]}驱动目标`;
+            }
+        }
+        return text;
+    };
+    const motifTypeTitle = normalizeModeText(cleanText((motif as any).motif_type_title, 180));
+    if (motifTypeTitle) return motifTypeTitle;
+    const reusableDescription = normalizeModeText(cleanText((motif as any).motif_type_reusable_description, 180));
+    if (reusableDescription) return reusableDescription;
+    const description = normalizeModeText(cleanText(motif.description, 180));
+    if (description && !/(direct|mediated|confounding|intervention|contradiction|constraint|determine|enable)/i.test(description)) {
+        return description;
+    }
+    return dependencyLabel(locale, motif.dependencyClass || motif.relation);
+}
+
+function motifContextText(locale: AppLocale, motif: ConceptMotif, contextLabels: string[]) {
+    if (contextLabels.length) return contextLabels.join(" / ");
+    const raw = cleanText((motif as any).context, 160);
+    if (!raw) return "";
+    const normalized = raw
+        .replace(/\|global\b/gi, "")
+        .replace(/\s{2,}/g, " ")
+        .replace(/^[a-z_]+\s*\/\s*/i, "")
+        .trim();
+    if (!normalized) return tr(locale, "当前任务", "Current task");
+    if (normalized === raw) return normalized;
+    return tr(locale, `当前任务 / ${normalized}`, `Current task / ${normalized}`);
+}
+
 function dependencyLabel(locale: AppLocale, relation: ConceptMotif["relation"]) {
-    if (relation === "enable") return tr(locale, "Enable（直接/中介因果）", "Enable (Direct/Mediated)");
-    if (relation === "constraint") return tr(locale, "Constraint（混杂）", "Constraint (Confounding)");
-    if (relation === "determine") return tr(locale, "Determine（干预）", "Determine (Intervention)");
-    return tr(locale, "Conflict（矛盾）", "Conflict (Contradiction)");
+    return relationLabel(locale, relation);
 }
 
 function causalOperatorLabel(locale: AppLocale, op?: ConceptMotif["causalOperator"]) {
-    if (op === "direct_causation") return tr(locale, "直接因果", "Direct causation");
-    if (op === "mediated_causation") return tr(locale, "中介因果", "Mediated causation");
-    if (op === "confounding") return tr(locale, "混杂", "Confounding");
-    if (op === "intervention") return tr(locale, "干预（do-operator）", "Intervention (do-operator)");
-    if (op === "contradiction") return tr(locale, "矛盾", "Contradiction");
-    return tr(locale, "未指定", "Unspecified");
+    return causalOperatorFriendlyLabel(locale, op);
 }
 
 function transferModeHint(locale: AppLocale, mode?: "A" | "B" | "C") {
@@ -833,28 +929,17 @@ export function ConceptPanel(props: {
                         const isUpdatedThisTurn = m.novelty === "new" || m.novelty === "updated";
                         const confidencePct = Math.round(clamp01(m.confidence, 0.72) * 100);
                         const barsOn = Math.max(1, Math.round((confidencePct / 100) * 4));
-                        const conceptRefs = (m.conceptIds || []).map((id) => ({
-                            id,
-                            no: conceptNoById.get(id),
-                            code: conceptNoById.get(id) ? `C${conceptNoById.get(id)}` : cleanText(id, 16),
-                        }));
-                        const refs = uniq(
-                            (m.conceptIds || []).flatMap((id) =>
-                                (conceptById.get(id)?.sourceMsgIds || []).map(sourceRefToken).filter(Boolean)
-                            ),
-                            6
-                        );
                         const pattern = motifPattern(m, conceptNoById);
-                        const causalFormula = pattern;
+                        const namedPattern = motifNamedPattern(m, conceptNoById, conceptById);
+                        const naturalTitle = motifHeadline(locale, m, conceptNoById, conceptById);
+                        const modeText = motifModeText(locale, m);
                         const isEditing = editingMotifId === m.id;
                         const draft = isEditing ? editingMotifDraft : null;
                         const contextLabels = contextTitlesByMotifId.get(m.id) || [];
                         const changeSource =
                             cleanText((m as any).change_source, 24) ||
                             (m.novelty === "new" || m.novelty === "updated" ? m.novelty : "");
-                        const contextLabel = contextLabels.length
-                            ? contextLabels.join(" / ")
-                            : tr(locale, "当前无关联 Context", "No linked context");
+                        const contextLabel = motifContextText(locale, m, contextLabels);
                         const draftPattern = draft
                             ? motifPatternFromIds(
                                 uniq(
@@ -890,7 +975,9 @@ export function ConceptPanel(props: {
                                 <div className="MotifCard__head">
                                     <span className="MotifCard__status">{motifStatusIcon(m.status)}</span>
                                     <div className="MotifCard__titleWrap">
-                                        <div className="ConceptCard__title">{m.title}</div>
+                                        <div className="ConceptCard__title" title={m.title || naturalTitle}>
+                                            {naturalTitle}
+                                        </div>
                                         <div className="ConceptCard__kind">
                                             <span className={`MotifStatusBadge status-${m.status}`}>{motifStatusLabel(locale, m.status)}</span>
                                             {changeSource ? (
@@ -959,29 +1046,25 @@ export function ConceptPanel(props: {
 
                                 {!isEditing ? (
                                     <>
-                                        <div className="ConceptCard__desc">{m.description || tr(locale, "暂无说明", "No description")}</div>
-                                        <div className="MotifCard__pattern">
-                                            {dependencyLabel(locale, m.dependencyClass || m.relation)} · {causalOperatorLabel(locale, m.causalOperator)}
+                                        <div className="MotifCard__detail">
+                                            <span className="MotifCard__detailLabel">{tr(locale, "模式", "Pattern")}:</span>
+                                            <span className="MotifCard__detailText">{modeText}</span>
                                         </div>
-                                        <div className="MotifCard__pattern">{causalFormula}</div>
-                                        <div className="MotifCard__concepts">
-                                            {conceptRefs.slice(0, 4).map((ref) => (
-                                                <span key={`${m.id}_c_${ref.id}`} className="MotifCard__conceptTag">
-                                                    {ref.code}
-                                                </span>
-                                            ))}
-                                            {conceptRefs.length > 4 ? (
-                                                <span className="MotifCard__conceptTag">+{conceptRefs.length - 4}</span>
-                                            ) : null}
+                                        <div className="MotifCard__relation">{namedPattern}</div>
+                                        {contextLabel ? (
+                                            <div className="MotifCard__detail">
+                                                <span className="MotifCard__detailLabel">Context:</span>
+                                                <span className="MotifCard__detailText">{contextLabel}</span>
+                                            </div>
+                                        ) : null}
+                                        <div className="MotifCard__progressHead">
+                                            <span>{tr(locale, "这条思路有多靠谱", "How reliable this pattern feels")}</span>
+                                            <span>{confidencePct}%</span>
                                         </div>
                                         <div className="MotifCard__progress">
                                             {[0, 1, 2, 3].map((i) => (
                                                 <span key={`${m.id}_p_${i}`} className={`MotifCard__bar ${i < barsOn ? "is-on" : ""}`} />
                                             ))}
-                                        </div>
-                                        <div className="ConceptCard__foot">
-                                            <span>{refs.length ? refs.join(" ") : tr(locale, "来源: n/a", "source: n/a")}</span>
-                                            <span>{confidencePct}%</span>
                                         </div>
                                     </>
                                 ) : null}
@@ -1119,7 +1202,7 @@ export function ConceptPanel(props: {
                                             </select>
                                         </label>
                                         <label className="FlowInspector__fieldLabel">
-                                            {tr(locale, "Causal Type", "Causal Type")}
+                                            {tr(locale, "关系方式", "Relation style")}
                                             <select
                                                 className="FlowInspector__select"
                                                 value={draft.causalOperator}

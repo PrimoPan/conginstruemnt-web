@@ -30,7 +30,7 @@ function renderPanel(overrides?: Partial<React.ComponentProps<typeof ConceptPane
     ...overrides,
   };
   render(<ConceptPanel {...props} />);
-  fireEvent.click(screen.getByRole("button", { name: /Motif \(0\)/ }));
+  fireEvent.click(screen.getByRole("button", { name: /Motif \(\d+\)/ }));
 }
 
 test("does not surface transfer UI before the first turn of a new trip", () => {
@@ -136,4 +136,101 @@ test("uses section-5 user language after first-turn retrieval instead of interna
   expect(screen.queryByText(/Mode C/i)).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "作为参考" })).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "作为约束" })).not.toBeInTheDocument();
+});
+
+test("renders motif cards with readable summary, named pattern, and no empty source footer", () => {
+  renderPanel({
+    motifs: [
+      {
+        id: "motif_1",
+        motif_id: "motif_1",
+        motif_type: "determine",
+        motifType: "pair",
+        relation: "determine",
+        dependencyClass: "determine",
+        causalOperator: "intervention",
+        title: "预算直接决定住宿档位",
+        description: "d",
+        confidence: 0.84,
+        status: "active",
+        conceptIds: ["c1", "c2"],
+        concept_bindings: ["c1", "c2"],
+        anchorConceptId: "c2",
+        supportEdgeIds: [],
+        supportNodeIds: [],
+        roles: { sources: ["c1"], target: "c2" },
+        scope: "global",
+        aliases: [],
+        motif_type_title: "Context-Driven Preference Prioritization",
+        updatedAt: "2026-03-07T00:00:00.000Z",
+      } as any,
+    ],
+    contexts: [
+      {
+        id: "ctx_1",
+        key: "family_trip",
+        title: "家庭旅行规划",
+        summary: "家庭旅行规划",
+        status: "active",
+        confidence: 0.92,
+        conceptIds: ["c1", "c2"],
+        motifIds: ["motif_1"],
+        nodeIds: [],
+        tags: [],
+        openQuestions: [],
+        locked: false,
+        paused: false,
+        updatedAt: "2026-03-07T00:00:00.000Z",
+      },
+    ] as any,
+    concepts: [
+      {
+        id: "c1",
+        kind: "belief",
+        validationStatus: "confirmed",
+        extractionStage: "identification",
+        polarity: "positive",
+        scope: "global",
+        family: "other",
+        semanticKey: "c1",
+        title: "预算",
+        description: "预算",
+        score: 0.9,
+        nodeIds: [],
+        evidenceTerms: [],
+        sourceMsgIds: [],
+        locked: false,
+        paused: false,
+        updatedAt: "2026-03-07T00:00:00.000Z",
+      },
+      {
+        id: "c2",
+        kind: "belief",
+        validationStatus: "confirmed",
+        extractionStage: "identification",
+        polarity: "positive",
+        scope: "global",
+        family: "other",
+        semanticKey: "c2",
+        title: "住宿档位",
+        description: "住宿档位",
+        score: 0.9,
+        nodeIds: [],
+        evidenceTerms: [],
+        sourceMsgIds: [],
+        locked: false,
+        paused: false,
+        updatedAt: "2026-03-07T00:00:00.000Z",
+      },
+    ] as any,
+  });
+
+  expect(screen.getByText("预算会直接决定住宿档位")).toBeInTheDocument();
+  expect(screen.getByText("Context-Driven Preference Prioritization")).toBeInTheDocument();
+  expect(screen.getByText("C1 预算 -> C2 住宿档位")).toBeInTheDocument();
+  expect(screen.getByText("Context:")).toBeInTheDocument();
+  expect(screen.getByText("家庭旅行规划")).toBeInTheDocument();
+  expect(screen.getByText(/这条思路有多靠谱/)).toBeInTheDocument();
+  expect(screen.queryByText(/来源:\s*n\/a|source:\s*n\/a/i)).not.toBeInTheDocument();
+  expect(screen.queryByText(/干预|Intervention|Determine（/i)).not.toBeInTheDocument();
 });
